@@ -1,0 +1,10 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+*.log
+
+# local backups exported from the app
+*-backup-*.json
+
+# node (not used, but just in case)
+node_modules/

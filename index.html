@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1" />
+  <meta name="theme-color" content="#0b3d2e" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>Sixer — Box & Ground Cricket Scorer</title>
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="icons/icon.svg" />
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+  <div id="app">
+    <header id="topbar">
+      <div class="brand">
+        <span class="ball"></span>
+        <div>
+          <h1 id="brand-name">Sixer</h1>
+          <small id="brand-tag">Every ground. Every ball. Every stat.</small>
+        </div>
+      </div>
+      <div id="topbar-actions"></div>
+    </header>
+
+    <main id="screen"><!-- screens render here --></main>
+
+    <nav id="bottomnav">
+      <button data-route="home"><span class="ic">🏠</span><span>Home</span></button>
+      <button data-route="players"><span class="ic">👥</span><span>Players</span></button>
+      <button data-route="newmatch" class="primary"><span class="ic">🏏</span><span>Play</span></button>
+      <button data-route="stats"><span class="ic">📊</span><span>Stats</span></button>
+      <button data-route="sessions"><span class="ic">🗓️</span><span>Weeks</span></button>
+    </nav>
+  </div>
+
+  <div id="modal-root"></div>
+  <div id="toast-root"></div>
+
+  <script src="js/store.js"></script>
+  <script src="js/scoring.js"></script>
+  <script src="js/stats.js"></script>
+  <script src="js/charts.js"></script>
+  <script src="js/photo.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/app.js"></script>
+  <script>
+    if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+      navigator.serviceWorker.register('sw.js').catch(()=>{});
+    }
+  </script>
+</body>
+</html>

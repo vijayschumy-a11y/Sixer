@@ -1,0 +1,14 @@
+{
+  "name": "Sixer — Box & Ground Cricket Scorer",
+  "short_name": "Sixer",
+  "description": "Best-in-class box & ground cricket scoring with Last Man Standing, player photos, weekly sessions and full stats. Offline, no login.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0a0f0d",
+  "theme_color": "#0b3d2e",
+  "icons": [
+    { "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
