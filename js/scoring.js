@@ -251,6 +251,13 @@
   }
   function manualSwap(match) { snapshot(match); swapEnds(cur(match)); }
 
+  /* Explicitly put a given batter on strike (used after run-outs, where the ends can be either way). */
+  function setStriker(match, pid) {
+    const inn = cur(match);
+    if (!pid || inn.striker === pid) return;
+    if (inn.nonStriker === pid) { snapshot(match); swapEnds(inn); }
+  }
+
   function closeInnings(match, reason) {
     const inn = cur(match);
     inn.closed = true; inn.closeReason = reason;
@@ -304,7 +311,7 @@
   }
 
   APP.scoring = {
-    newMatch, startInnings, recordBall, setNewBatsman, setNewBowler, manualSwap,
+    newMatch, startInnings, recordBall, setNewBatsman, setNewBowler, manualSwap, setStriker,
     endInningsManually, computeResult, cur, maxWickets, undo, canUndo,
     oversText, rr, reqRR, teamName, dismissalText, battingTeamFirst,
   };

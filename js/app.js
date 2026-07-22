@@ -464,9 +464,12 @@
         <button class="btn" data-ex="legbye">Leg bye</button>
       </div>
       <div class="pad-row">
+        <button class="btn undo" id="lv-undo2" ${SC.canUndo(match) ? '' : 'disabled'}>↺ Undo last ball</button>
         <button class="btn sm" id="lv-swap">⇄ Swap</button>
         <button class="btn sm" id="lv-bowler">🎯 Bowler</button>
-        <button class="btn sm" id="lv-card">📋 Card</button>
+      </div>
+      <div class="pad-row" style="grid-template-columns:1fr 1fr">
+        <button class="btn sm" id="lv-card">📋 Scorecard</button>
         <button class="btn sm" id="lv-more">⋯ More</button>
       </div>
 
@@ -478,9 +481,14 @@
 
     // guards: need bowler / need batsman
     const needBowler = !inn.bowler && !inn.closed;
-    const needBatsman = !inn.striker && !inn.closed;
+    // a batting slot is empty — covers the non-striker being run out, not just the striker.
+    // In last-man / single-batter mode the non-striker slot is empty by design, so don't ask.
+    const pairBatting = !match.rules.singleBatsman && !inn.lastMan;
+    const needBatsman = !inn.closed && (!inn.striker || (pairBatting && !inn.nonStriker));
 
-    $('#lv-undo').onclick = () => { if (SC.undo(match)) { S.Matches.save(match); toast('Undone'); render(); } };
+    const doUndo = () => { if (SC.undo(match)) { S.Matches.save(match); pendingStrikeAsk = false; toast('Undone'); render(); } };
+    $('#lv-undo').onclick = doUndo;
+    $('#lv-undo2').onclick = doUndo;
     $$('#screen [data-run]').forEach((b) => b.onclick = () => ball({ runs: parseInt(b.dataset.run, 10) }));
     $$('#screen [data-ex]').forEach((b) => b.onclick = () => extraFlow(b.dataset.ex));
     $('#lv-wkt').onclick = () => wicketFlow();
@@ -560,19 +568,42 @@
         const needFielder = ['caught', 'runout', 'stumped'].includes(type);
         const proceed = (fielder, who, runs) => ball({ runs: runs || 0, wicket: { type, who: who || 'striker', fielder } });
         if (type === 'runout') {
-          // who is out + runs completed
-          pick('Who is run out?', [{ id: 'striker', label: pname(inn.striker) + ' (striker)' }]
-            .concat(inn.nonStriker ? [{ id: 'nonstriker', label: pname(inn.nonStriker) + ' (non-striker)' }] : []), (who) => {
-            runChoice('Runs completed before run out', [0, 1, 2, 3], (rn) => {
-              pickPlayer('Fielder (throw/run out)', fielders, (fid) => proceed(fid, who, rn), true);
-            });
-          });
+          runOutSheet(fielders);
         } else if (needFielder) {
           pickPlayer(type === 'stumped' ? 'Keeper' : 'Caught by', fielders, (fid) => proceed(fid, 'striker', 0), true);
         } else {
           proceed(null, 'striker', 0);
         }
       });
+    }
+
+    /* One compact sheet: runs completed + who's out + fielder. */
+    function runOutSheet(fielders) {
+      const nsName = inn.nonStriker ? pname(inn.nonStriker) : null;
+      const s = sheet('Run out', `
+        <div class="small muted" style="margin-bottom:7px">Runs completed before the run out</div>
+        <div class="chips" id="ro-runs">${[0, 1, 2, 3].map((n) => `<button class="chip ${n === 0 ? 'sel' : ''}" data-r="${n}">${n}</button>`).join('')}</div>
+        <div class="small muted" style="margin:14px 0 7px">Which batter is out?</div>
+        <div class="chips" id="ro-who">
+          <button class="chip sel" data-w="striker">${esc(pname(inn.striker))} <span class="muted">· striker</span></button>
+          ${nsName ? `<button class="chip" data-w="nonstriker">${esc(nsName)} <span class="muted">· non-striker</span></button>` : ''}
+        </div>
+        <label class="field" style="margin-top:14px"><span>Fielder (optional)</span>
+          <select id="ro-f"><option value="">—</option>${fielders.map((f) => `<option value="${f.id}">${esc(f.name)}</option>`).join('')}</select></label>
+        <button class="btn primary block" id="ro-ok" style="margin-top:8px">Confirm run out</button>`);
+      let runs = 0, who = 'striker';
+      const wire = (sel, key, cb) => $$(sel + ' .chip', s.overlay).forEach((b) => b.onclick = () => {
+        $$(sel + ' .chip', s.overlay).forEach((x) => x.classList.remove('sel'));
+        b.classList.add('sel'); cb(b.dataset[key]);
+      });
+      wire('#ro-runs', 'r', (v) => runs = parseInt(v, 10));
+      wire('#ro-who', 'w', (v) => who = v);
+      $('#ro-ok', s.overlay).onclick = () => {
+        const f = $('#ro-f', s.overlay).value || null;
+        s.close();
+        pendingStrikeAsk = true; // ends are ambiguous after a run out — ask explicitly
+        ball({ runs, wicket: { type: 'runout', who, fielder: f } });
+      };
     }
 
     function chooseBatsman() {
@@ -582,7 +613,14 @@
       if (!avail.length) { toast('No batters left'); return; }
       pickPlayer('New batter in', avail, (pid) => {
         SC.setNewBatsman(match, pid); S.Matches.save(match);
-        if (!inn.bowler) chooseBowler(); else render();
+        const finish = () => { if (!inn.bowler) chooseBowler(); else render(); };
+        // after a run out the batters may have crossed — let the scorer set the ends
+        if (pendingStrikeAsk && inn.striker && inn.nonStriker) {
+          pendingStrikeAsk = false;
+          pick('Who is on strike now?', [inn.striker, inn.nonStriker].map((id) => ({ id, label: pname(id) })), (sid) => {
+            SC.setStriker(match, sid); S.Matches.save(match); finish();
+          });
+        } else { pendingStrikeAsk = false; finish(); }
       });
     }
 
@@ -843,6 +881,7 @@
   /* =========================================================
      STATS / LEADERBOARDS
   ========================================================= */
+  let pendingStrikeAsk = false;
   let cardChart = 'worm';
   let statsTab = 'batting';
   function statsScreen(screen) {
