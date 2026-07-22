@@ -2,7 +2,7 @@
 (function () {
   const APP = window.Sixer;
   const { $, $$, esc, toast, avatar, pname, sheet, pick, confirm, prompt, statTile, fmtDate, fmtDay, download } = APP.ui;
-  const S = APP.store, SC = APP.scoring, ST = APP.stats;
+  const S = APP.store, SC = APP.scoring, ST = APP.stats, TR = APP.tournament;
 
   const BRAND = S.Settings.get().appName || 'Sixer';
 
@@ -96,18 +96,26 @@
   /* =========================================================
      PLAYERS
   ========================================================= */
+  let squadTab = 'players';
   function playersScreen(screen, params, actions) {
     const players = S.Players.all();
+    if (params.tab) squadTab = params.tab;
     actions.innerHTML = `<button class="btn sm primary" id="pa-add">➕ Add</button>`;
+    if (squadTab === 'teams') return teamsTab(screen, actions);
+
     screen.innerHTML = `
-      <div class="screen-title"><h2>Players</h2><span class="muted small">${players.length} total</span></div>
+      <div class="screen-title"><h2>Squad</h2><span class="muted small">${players.length} players</span></div>
+      <div class="tabs" style="margin-bottom:12px">
+        <button data-sq="players" class="active">👥 Players</button>
+        <button data-sq="teams">🛡️ Teams</button>
+      </div>
       <label class="field"><input id="pl-search" placeholder="🔍 Search players"></label>
       <div class="plist" id="pl-list">
         ${players.length ? players.map(playerRow).join('') :
           `<div class="empty"><div class="big">👥</div>No players yet. Add your squad — with photos!</div>`}
       </div>`;
+    $$('#screen [data-sq]').forEach((b) => b.onclick = () => { squadTab = b.dataset.sq; render(); });
     $('#pa-add').onclick = () => editPlayer(null);
-    actions.firstChild && (actions.firstChild.onclick = () => editPlayer(null));
     $('#pl-search').oninput = (e) => {
       const q = e.target.value.toLowerCase();
       $('#pl-list').innerHTML = players.filter((p) => p.name.toLowerCase().includes(q)).map(playerRow).join('');
@@ -118,6 +126,67 @@
     }
     bindRows();
     if (params.add) editPlayer(null);
+  }
+
+  /* ---- Teams (saved squads) ---- */
+  function teamsTab(screen, actions) {
+    const teams = S.Teams.all();
+    actions.innerHTML = `<button class="btn sm primary" id="tm-add">➕ Team</button>`;
+    screen.innerHTML = `
+      <div class="screen-title"><h2>Squad</h2><span class="muted small">${teams.length} teams</span></div>
+      <div class="tabs" style="margin-bottom:12px">
+        <button data-sq="players">👥 Players</button>
+        <button data-sq="teams" class="active">🛡️ Teams</button>
+      </div>
+      <p class="muted small">Save a team once, then just pick it when starting a match or tournament.</p>
+      <div class="plist" style="margin-top:10px">
+        ${teams.length ? teams.map((t) => `<div class="prow" data-tm="${t.id}">
+            <div class="avatar">${esc(initialsOf(t.name))}</div>
+            <div class="meta"><div class="nm">${esc(t.name)}</div>
+              <div class="sub">${t.players.length} player${t.players.length !== 1 ? 's' : ''}</div></div>
+            <span class="muted">›</span></div>`).join('')
+          : `<div class="empty"><div class="big">🛡️</div>No teams yet. Create one to run a tournament.</div>`}
+      </div>`;
+    $$('#screen [data-sq]').forEach((b) => b.onclick = () => { squadTab = b.dataset.sq; render(); });
+    $('#tm-add').onclick = () => editTeam(null);
+    $$('#screen [data-tm]').forEach((e) => e.onclick = () => editTeam(e.dataset.tm));
+  }
+  function initialsOf(n) { return (n || '?').trim().split(/\s+/).map((w) => w[0]).slice(0, 2).join('').toUpperCase(); }
+
+  function editTeam(id) {
+    const t = id ? S.Teams.get(id) : null;
+    const sel = new Set(t ? t.players : []);
+    const players = S.Players.all();
+    const s = sheet(t ? 'Edit team' : 'New team', `
+      <label class="field"><span>Team name</span><input id="tm-name" value="${esc(t ? t.name : '')}" placeholder="e.g. Chennai Smashers"></label>
+      <div class="small muted" style="margin:6px 0">Tap players to add them to this team</div>
+      <div class="plist" id="tm-pool" style="max-height:46vh;overflow:auto">
+        ${players.length ? players.map((p) => `<div class="prow" data-p="${p.id}" style="${sel.has(p.id) ? 'border-color:var(--green);background:var(--green-d)' : ''}">
+            ${avatar(p)}<div class="meta"><div class="nm">${esc(p.name)}</div>
+            <div class="sub">${ROLE_LABEL[p.role] || p.role}</div></div>
+            <span class="pill ${sel.has(p.id) ? 'on' : ''}">${sel.has(p.id) ? '✓' : '+'}</span></div>`).join('')
+          : '<div class="muted small">Add players first.</div>'}
+      </div>
+      <div class="small muted center" id="tm-count" style="margin-top:8px">${sel.size} selected</div>
+      <button class="btn primary block" id="tm-save" style="margin-top:10px">${t ? 'Save team' : 'Create team'}</button>
+      ${t ? `<button class="btn danger block" id="tm-del" style="margin-top:8px">Delete team</button>` : ''}`);
+    $$('#tm-pool [data-p]', s.overlay).forEach((row) => row.onclick = () => {
+      const pid = row.dataset.p;
+      if (sel.has(pid)) { sel.delete(pid); row.style.borderColor = ''; row.style.background = ''; row.querySelector('.pill').className = 'pill'; row.querySelector('.pill').textContent = '+'; }
+      else { sel.add(pid); row.style.borderColor = 'var(--green)'; row.style.background = 'var(--green-d)'; row.querySelector('.pill').className = 'pill on'; row.querySelector('.pill').textContent = '✓'; }
+      $('#tm-count', s.overlay).textContent = sel.size + ' selected';
+    });
+    $('#tm-save', s.overlay).onclick = () => {
+      const name = $('#tm-name', s.overlay).value.trim();
+      if (!name) return toast('Enter a team name', 'err');
+      if (!sel.size) return toast('Pick at least one player', 'err');
+      const data = { name, players: Array.from(sel) };
+      if (t) S.Teams.update(t.id, data); else S.Teams.add(data);
+      s.close(); toast(t ? 'Team saved' : 'Team created'); render();
+    };
+    if (t) $('#tm-del', s.overlay).onclick = () => confirm('Delete team?', `Remove ${t.name}? Past matches keep their scorecards.`, () => {
+      S.Teams.remove(t.id); s.close(); render();
+    }, 'Delete', true);
   }
 
   const ROLE_LABEL = { batsman: 'Batsman', bowler: 'Bowler', allrounder: 'All-rounder', keeper: 'Wicket-keeper' };
@@ -924,21 +993,200 @@
   /* =========================================================
      SESSIONS (weekly)
   ========================================================= */
+  let competeTab = 'cups';
   function sessionsScreen(screen, params, actions) {
-    actions.innerHTML = `<button class="btn sm primary" id="se-add">＋ New</button>`;
+    if (params.tab) competeTab = params.tab;
+    const cups = S.Tournaments.all();
     const sessions = S.Sessions.all();
+    actions.innerHTML = `<button class="btn sm primary" id="se-add">＋ New</button>`;
+
+    const tabs = `<div class="tabs" style="margin-bottom:12px">
+        <button data-ct="cups" class="${competeTab === 'cups' ? 'active' : ''}">🏆 Tournaments</button>
+        <button data-ct="weeks" class="${competeTab === 'weeks' ? 'active' : ''}">🗓️ Weeks</button>
+      </div>`;
+
+    if (competeTab === 'cups') {
+      screen.innerHTML = `<div class="screen-title"><h2>Compete</h2></div>${tabs}
+        <p class="muted small">Run a proper tournament: league fixtures, points table with NRR, semis and a final.</p>
+        <button class="btn primary block" id="cup-new" style="margin:12px 0">🏆 New tournament</button>
+        ${cups.length ? cups.map((t) => {
+          const champ = TR.champion(t);
+          const played = t.fixtures.filter(TR.isPlayed).length;
+          return `<div class="list-link" data-cup="${t.id}">
+            <div style="min-width:0"><b>${esc(t.name)}</b>
+              <div class="small muted">${t.teamIds.length} teams · ${played}/${t.fixtures.length} played${champ ? ' · 🏆 ' + esc(teamName(champ)) : ''}</div></div>
+            <span class="badge ${t.status === 'done' ? 'done' : 'live'}">${t.status === 'done' ? 'Finished' : (t.status === 'playoffs' ? 'Playoffs' : 'League')}</span>
+          </div>`;
+        }).join('') : `<div class="empty"><div class="big">🏆</div>No tournaments yet.</div>`}`;
+      $('#cup-new').onclick = newTournament;
+      $('#se-add').onclick = newTournament;
+      $$('#screen [data-cup]').forEach((e) => e.onclick = () => go('cup', { id: e.dataset.cup }));
+    } else {
+      screen.innerHTML = `<div class="screen-title"><h2>Compete</h2></div>${tabs}
+        <p class="muted small">Group casual games by week. Tap a week to see its matches & stats.</p>
+        ${sessions.length ? sessions.map((se) => {
+          const ms = S.Sessions.matches(se.id);
+          return `<div class="list-link" data-se="${se.id}">
+            <div><b>${esc(se.name)}</b><div class="small muted">${fmtDate(se.date)} · ${ms.length} match${ms.length !== 1 ? 'es' : ''}</div></div>
+            <span class="muted">›</span></div>`;
+        }).join('') : `<div class="empty"><div class="big">🗓️</div>No weeks yet.</div>`}`;
+      $('#se-add').onclick = () => prompt('New week', 'Name', 'Week of ' + fmtDate(Date.now()), (v) => { if (v) { S.Sessions.add({ name: v }); render(); } });
+      $$('#screen [data-se]').forEach((e) => e.onclick = () => go('session', { id: e.dataset.se }));
+    }
+    $$('#screen [data-ct]').forEach((b) => b.onclick = () => { competeTab = b.dataset.ct; render(); });
+  }
+
+  const teamName = (id) => { const t = S.Teams.get(id); return t ? t.name : '—'; };
+
+  function newTournament() {
+    const teams = S.Teams.all();
+    if (teams.length < 2) {
+      return confirm('Create teams first', 'A tournament needs at least 2 saved teams. Create them under Squad → Teams.', () => go('players', { tab: 'teams' }), 'Go to Teams');
+    }
+    const d = S.Settings.get().defaults;
+    const sel = new Set();
+    const s = sheet('New tournament', `
+      <label class="field"><span>Tournament name</span><input id="cp-name" placeholder="e.g. Sunday Box Cup"></label>
+      <div class="grid cols-2">
+        <label class="field"><span>Overs / innings</span><input id="cp-ov" type="number" min="1" max="50" value="${d.oversPerInnings}"></label>
+        <label class="field"><span>Players / side</span><input id="cp-pps" type="number" min="2" max="16" value="${d.playersPerSide}"></label>
+      </div>
+      <label class="field"><span>Format</span>
+        <select id="cp-fmt">
+          <option value="league_playoffs">League + Semis + Final</option>
+          <option value="league_only">League only (top of table wins)</option>
+        </select></label>
+      <div class="small muted" style="margin:6px 0">Pick the teams taking part</div>
+      <div class="plist" id="cp-teams" style="max-height:36vh;overflow:auto">
+        ${teams.map((t) => `<div class="prow" data-t="${t.id}">
+          <div class="avatar">${esc(initialsOf(t.name))}</div>
+          <div class="meta"><div class="nm">${esc(t.name)}</div><div class="sub">${t.players.length} players</div></div>
+          <span class="pill">+</span></div>`).join('')}
+      </div>
+      <div class="small muted center" id="cp-count" style="margin-top:8px">0 teams selected</div>
+      <button class="btn primary block" id="cp-ok" style="margin-top:10px">Create tournament</button>`);
+    $$('#cp-teams [data-t]', s.overlay).forEach((row) => row.onclick = () => {
+      const id = row.dataset.t;
+      const pill = row.querySelector('.pill');
+      if (sel.has(id)) { sel.delete(id); row.style.borderColor = ''; row.style.background = ''; pill.className = 'pill'; pill.textContent = '+'; }
+      else { sel.add(id); row.style.borderColor = 'var(--green)'; row.style.background = 'var(--green-d)'; pill.className = 'pill on'; pill.textContent = '✓'; }
+      $('#cp-count', s.overlay).textContent = sel.size + ' teams selected';
+    });
+    $('#cp-ok', s.overlay).onclick = () => {
+      const name = $('#cp-name', s.overlay).value.trim();
+      if (!name) return toast('Enter a tournament name', 'err');
+      if (sel.size < 2) return toast('Pick at least 2 teams', 'err');
+      const rules = Object.assign({}, d, {
+        oversPerInnings: clampInt($('#cp-ov', s.overlay).value, 1, 50, d.oversPerInnings),
+        playersPerSide: clampInt($('#cp-pps', s.overlay).value, 2, 16, d.playersPerSide),
+      });
+      const t = TR.create({ name, teamIds: Array.from(sel), rules, format: $('#cp-fmt', s.overlay).value });
+      s.close(); toast('Tournament created'); go('cup', { id: t.id });
+    };
+  }
+
+  /* ---- Tournament detail ---- */
+  function cupScreen(screen, params, actions) {
+    const t = S.Tournaments.get(params.id);
+    if (!t) return go('sessions');
+    TR.advance(t); // create semis/final as soon as they're possible
+    const rows = TR.table(t);
+    const champ = TR.champion(t);
+    const next = TR.nextFixture(t);
+    actions.innerHTML = `<button class="btn sm" id="cup-del">Delete</button>`;
+
+    const fixtureRow = (f) => {
+      const m = TR.matchOf(f);
+      const done = TR.isPlayed(f);
+      const live = m && m.status === 'live';
+      const w = TR.winnerOf(f);
+      return `<div class="list-link" data-fx="${f.id}">
+        <div style="min-width:0">
+          <div><b>${esc(teamName(f.a))}</b> <span class="muted">vs</span> <b>${esc(teamName(f.b))}</b></div>
+          <div class="small muted">${TR.ROUND_LABEL[f.round]}${done ? ' · ' + esc(m.result || '') : (live ? ' · in progress' : ' · not played')}</div>
+        </div>
+        <span class="badge ${done ? 'done' : (live ? 'live' : '')}">${done ? (w ? '🏅' : 'Tie') : (live ? 'Resume' : 'Play ▸')}</span>
+      </div>`;
+    };
+    const roundsOrder = ['league', 'sf1', 'sf2', 'final'];
+    const grouped = roundsOrder.filter((r) => t.fixtures.some((f) => f.round === r));
+
     screen.innerHTML = `
-      <div class="screen-title"><h2>Weekly sessions</h2></div>
-      <p class="muted small">Group your weekly games. Tap a session to see its matches & stats.</p>
-      ${sessions.length ? sessions.map((se) => {
-        const ms = S.Sessions.matches(se.id);
-        return `<div class="list-link" data-se="${se.id}">
-          <div><b>${esc(se.name)}</b><div class="small muted">${fmtDate(se.date)} · ${ms.length} match${ms.length !== 1 ? 'es' : ''}</div></div>
-          <span class="muted">›</span></div>`;
-      }).join('') : `<div class="empty"><div class="big">🗓️</div>No sessions yet.</div>`}
+      <div class="screen-title"><h2>${esc(t.name)}</h2>
+        <span class="badge ${t.status === 'done' ? 'done' : 'live'}">${t.status === 'done' ? 'Finished' : (t.status === 'playoffs' ? 'Playoffs' : 'League')}</span></div>
+
+      ${champ ? `<div class="card center" style="border-color:#6a4f15;background:linear-gradient(180deg,#241b06,#1a1405)">
+        <div class="small" style="color:var(--accent);letter-spacing:2px">🏆 CHAMPION</div>
+        <div style="font-size:26px;font-weight:900;margin-top:4px">${esc(teamName(champ))}</div></div>` : ''}
+
+      ${next && t.status !== 'done' ? `<button class="btn primary block" id="cup-next" style="margin:12px 0;padding:16px">
+        ▸ Play next: ${esc(teamName(next.a))} vs ${esc(teamName(next.b))}
+        <span class="small" style="opacity:.75">(${TR.ROUND_LABEL[next.round]})</span></button>` : ''}
+
+      <div class="card">
+        <h4>Points table</h4>
+        <table class="sc-table" style="margin-top:8px">
+          <tr><th style="text-align:left">Team</th><th>P</th><th>W</th><th>L</th><th>T</th><th>Pts</th><th>NRR</th></tr>
+          ${rows.map((r, i) => `<tr>
+            <td style="text-align:left">${i < 4 && t.format === 'league_playoffs' && rows.length >= 4 ? '<span style="color:var(--green)">•</span> ' : ''}${esc(r.name)}</td>
+            <td>${r.p}</td><td>${r.w}</td><td>${r.l}</td><td>${r.t}</td><td><b>${r.pts}</b></td>
+            <td style="color:${r.nrr >= 0 ? 'var(--green)' : 'var(--red)'}">${r.nrrStr}</td></tr>`).join('')}
+        </table>
+        ${t.format === 'league_playoffs' && rows.length >= 4 ? '<div class="small muted" style="margin-top:6px">• Top 4 qualify for the semi-finals</div>' : ''}
+      </div>
+
+      ${grouped.map((r) => `<div class="card"><h4>${TR.ROUND_LABEL[r]}</h4>
+        <div style="margin-top:8px">${t.fixtures.filter((f) => f.round === r).map(fixtureRow).join('')}</div></div>`).join('')}
     `;
-    $('#se-add').onclick = () => prompt('New session', 'Name', 'Week of ' + fmtDate(Date.now()), (v) => { if (v) { S.Sessions.add({ name: v }); render(); } });
-    $$('#screen [data-se]').forEach((e) => e.onclick = () => go('session', { id: e.dataset.se }));
+    if ($('#cup-next')) $('#cup-next').onclick = () => openFixture(t, next);
+    $$('#screen [data-fx]').forEach((e) => e.onclick = () => openFixture(t, t.fixtures.find((f) => f.id === e.dataset.fx)));
+    $('#cup-del').onclick = () => confirm('Delete tournament?', 'Removes the tournament and its matches.', () => { S.Tournaments.remove(t.id); go('sessions'); }, 'Delete', true);
+  }
+
+  /* Start (or resume) the match for a fixture. */
+  function openFixture(t, f) {
+    if (!f) return;
+    const existing = TR.matchOf(f);
+    if (existing) return go(existing.status === 'live' ? 'live' : 'scorecard', { id: existing.id });
+
+    const teamA = S.Teams.get(f.a), teamB = S.Teams.get(f.b);
+    if (!teamA || !teamB) return toast('Team missing', 'err');
+    const s = sheet('Toss', `
+      <div class="small muted" style="margin-bottom:7px">Who won the toss?</div>
+      <div class="chips" id="ts-who">
+        <button class="chip sel" data-w="0">${esc(teamA.name)}</button>
+        <button class="chip" data-w="1">${esc(teamB.name)}</button>
+      </div>
+      <div class="small muted" style="margin:14px 0 7px">Elected to</div>
+      <div class="chips" id="ts-dec">
+        <button class="chip sel" data-d="bat">🏏 Bat</button>
+        <button class="chip" data-d="bowl">🎯 Bowl</button>
+      </div>
+      <button class="btn primary block" id="ts-ok" style="margin-top:14px">Start match ▸</button>`);
+    let wonBy = 0, decision = 'bat';
+    const wire = (sel, key, cb) => $$(sel + ' .chip', s.overlay).forEach((b) => b.onclick = () => {
+      $$(sel + ' .chip', s.overlay).forEach((x) => x.classList.remove('sel'));
+      b.classList.add('sel'); cb(b.dataset[key]);
+    });
+    wire('#ts-who', 'w', (v) => wonBy = parseInt(v, 10));
+    wire('#ts-dec', 'd', (v) => decision = v);
+    $('#ts-ok', s.overlay).onclick = () => {
+      s.close();
+      const match = SC.newMatch({
+        format: t.rules.format || 'box', rules: Object.assign({}, t.rules),
+        teams: [
+          { name: teamA.name, players: teamA.players.slice(), teamId: teamA.id },
+          { name: teamB.name, players: teamB.players.slice(), teamId: teamB.id },
+        ],
+        toss: { wonBy, decision },
+      });
+      match.tournamentId = t.id;
+      match.fixtureId = f.id;
+      S.Matches.save(match);
+      f.matchId = match.id;
+      S.Tournaments.save(t);
+      openInningsFlow(match);
+    };
   }
 
   function sessionScreen(screen, params, actions) {
@@ -1036,7 +1284,8 @@
   const SCREENS = {
     home: homeScreen, players: playersScreen, player: playerProfile,
     newmatch: newMatchScreen, live: liveScreen, scorecard: scorecardScreen,
-    stats: statsScreen, sessions: sessionsScreen, session: sessionScreen, settings: settingsScreen,
+    stats: statsScreen, sessions: sessionsScreen, session: sessionScreen,
+    cup: cupScreen, settings: settingsScreen,
   };
 
   $$('#bottomnav button').forEach((b) => b.onclick = () => { if (b.dataset.route === 'newmatch') draft = null; go(b.dataset.route); });

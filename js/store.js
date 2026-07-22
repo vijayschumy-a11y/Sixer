@@ -6,6 +6,8 @@
   const blank = () => ({
     version: 1,
     players: [],   // {id,name,photo,role,batHand,bowlStyle,createdAt}
+    teams: [],     // {id,name,players:[pid],createdAt}
+    tournaments: [], // {id,name,date,format,teamIds:[],rules:{},fixtures:[],status}
     sessions: [],  // {id,name,date,note}
     matches: [],   // see scoring.js for shape
     settings: {
@@ -80,6 +82,39 @@
     },
   };
 
+  /* ---------- Teams (saved squads) ---------- */
+  const Teams = {
+    all: () => db.teams.slice().sort((a, b) => a.name.localeCompare(b.name)),
+    get: (id) => db.teams.find((t) => t.id === id),
+    add(data) {
+      const t = Object.assign({ id: uid('tm'), name: '', players: [], createdAt: Date.now() }, data);
+      db.teams.push(t); persist(); return t;
+    },
+    update(id, data) { const t = Teams.get(id); if (t) { Object.assign(t, data); persist(); } return t; },
+    remove(id) { db.teams = db.teams.filter((t) => t.id !== id); persist(); },
+  };
+
+  /* ---------- Tournaments ---------- */
+  const Tournaments = {
+    all: () => db.tournaments.slice().sort((a, b) => b.date - a.date),
+    get: (id) => db.tournaments.find((t) => t.id === id),
+    add(data) {
+      const t = Object.assign({
+        id: uid('tr'), name: '', date: Date.now(), format: 'league_playoffs',
+        teamIds: [], rules: {}, fixtures: [], status: 'league',
+      }, data);
+      db.tournaments.push(t); persist(); return t;
+    },
+    update(id, data) { const t = Tournaments.get(id); if (t) { Object.assign(t, data); persist(); } return t; },
+    save(t) { const i = db.tournaments.findIndex((x) => x.id === t.id); if (i >= 0) db.tournaments[i] = t; else db.tournaments.push(t); persist(); return t; },
+    remove(id) {
+      db.tournaments = db.tournaments.filter((t) => t.id !== id);
+      db.matches = db.matches.filter((m) => m.tournamentId !== id);
+      persist();
+    },
+    matches: (id) => db.matches.filter((m) => m.tournamentId === id),
+  };
+
   /* ---------- Sessions (weekly) ---------- */
   const Sessions = {
     all: () => db.sessions.slice().sort((a, b) => b.date - a.date),
@@ -130,5 +165,5 @@
   function wipe() { db = blank(); persist(); }
 
   APP.uid = uid;
-  APP.store = { Players, Sessions, Matches, Settings, exportJSON, importJSON, wipe, raw: () => db };
+  APP.store = { Players, Teams, Tournaments, Sessions, Matches, Settings, exportJSON, importJSON, wipe, raw: () => db };
 })();

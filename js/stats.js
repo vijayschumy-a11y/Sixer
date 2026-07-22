@@ -130,11 +130,13 @@
   function standings(matches) {
     const SCo = APP.scoring;
     const T = {};
-    const get = (n) => T[n] || (T[n] = { name: n, p: 0, w: 0, l: 0, t: 0, pts: 0, rf: 0, bf: 0, ra: 0, ba: 0 });
+    // key by saved-team id when the match came from a tournament, else by team name
+    const keyFor = (m, idx) => m.teams[idx].teamId || SCo.teamName(m, idx);
+    const get = (k, name, teamId) => T[k] || (T[k] = { key: k, teamId: teamId || null, name, p: 0, w: 0, l: 0, t: 0, pts: 0, rf: 0, bf: 0, ra: 0, ba: 0 });
     matches.filter((m) => m.status === 'complete' && m.innings.length === 2).forEach((m) => {
       const i0 = m.innings[0], i1 = m.innings[1];
-      const A = get(SCo.teamName(m, i0.battingTeam));
-      const B = get(SCo.teamName(m, i1.battingTeam));
+      const A = get(keyFor(m, i0.battingTeam), SCo.teamName(m, i0.battingTeam), m.teams[i0.battingTeam].teamId);
+      const B = get(keyFor(m, i1.battingTeam), SCo.teamName(m, i1.battingTeam), m.teams[i1.battingTeam].teamId);
       const eb = (inn) => { const allOut = inn.wickets >= SCo.maxWickets(m); return (allOut ? m.rules.oversPerInnings * 6 : inn.legalBalls) || 1; };
       A.p++; B.p++;
       A.rf += i0.runs; A.bf += eb(i0); A.ra += i1.runs; A.ba += eb(i1);

@@ -3,7 +3,8 @@ const CACHE = 'sixer-v4';
 const ASSETS = [
   './', './index.html',
   './css/styles.css',
-  './js/store.js', './js/scoring.js', './js/stats.js', './js/charts.js', './js/photo.js', './js/ui.js', './js/app.js',
+  './js/store.js', './js/scoring.js', './js/stats.js', './js/charts.js', './js/tournament.js',
+  './js/photo.js', './js/ui.js', './js/app.js',
   './manifest.webmanifest',
   './icons/icon.svg', './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png',
 ];
