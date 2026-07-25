@@ -510,7 +510,10 @@
     const liveBanner = shared
       ? `<div class="live-banner ${amScorer ? 'me' : ''}">
            <span><span class="dot"></span>LIVE · ${match.roomCode}${amScorer ? ' · you are scoring' : (scorerName ? ' · ' + esc(scorerName) + ' scoring' : '')}</span>
-           <button class="btn sm" id="lv-share">Share</button>
+           <span class="row" style="gap:8px">
+             <span class="vwrs" title="watching now">👁 <span id="lv-viewers">${SY.viewerCount()}</span></span>
+             <button class="btn sm" id="lv-share">Share</button>
+           </span>
          </div>`
       : `<button class="btn accent block" id="lv-golive" style="margin-bottom:10px">📡 Go Live — let others watch on their phones</button>`;
 
@@ -542,7 +545,10 @@
       <div class="card center" style="margin-top:12px">
         <div style="font-size:15px">👀 You're watching live</div>
         <div class="small muted" style="margin:4px 0 12px">${scorerName ? esc(scorerName) + ' is scoring.' : ''} Updates appear automatically.</div>
-        <button class="btn primary block" id="lv-takeover">🖊️ I'm scoring now</button>
+        ${pendingReqActive
+          ? `<div class="pill on" style="display:block;padding:12px">⏳ Waiting for ${esc(scorerName || 'the scorer')} to approve…</div>
+             <button class="btn sm ghost block" id="lv-cancelreq" style="margin-top:8px">Cancel request</button>`
+          : `<button class="btn primary block" id="lv-takeover">🖊️ I'm scoring now</button>`}
         <button class="btn sm ghost block" id="lv-card" style="margin-top:8px">📋 Full scorecard</button>
       </div>`;
 
@@ -600,6 +606,7 @@
     if ($('#lv-share')) $('#lv-share').onclick = () => shareLiveSheet(match);
     if ($('#lv-golive')) $('#lv-golive').onclick = () => goLive(match);
     if ($('#lv-takeover')) $('#lv-takeover').onclick = () => takeOver(match);
+    if ($('#lv-cancelreq')) $('#lv-cancelreq').onclick = () => cancelTakeover();
 
     if (amScorer) {
       const doUndo = () => { if (SC.undo(match)) { persist(); pendingStrikeAsk = false; toast('Undone'); render(); } };
@@ -813,8 +820,18 @@
 
   function takeOver(match) {
     if (!SY.available()) return;
-    SY.claimScorer(deviceName()).then((ok) => { if (ok) { toast('You are scoring now'); render(); } else toast('Could not take over', 'err'); });
+    const scorer = SY.currentScorer();
+    // If nobody is actively scoring (scorer's device gone), claim straight away — no one to approve.
+    if (!scorer || !SY.isPresent(scorer.id)) {
+      SY.claimScorer(deviceName()).then((ok) => { if (ok) { toast('You are scoring now'); render(); } else toast('Could not take over', 'err'); });
+      return;
+    }
+    SY.requestScorer(deviceName()).then((ok) => {
+      if (ok) { pendingReqActive = true; toast('Asked ' + scorer.name + ' to approve…'); render(); }
+      else toast('Could not send request', 'err');
+    });
   }
+  function cancelTakeover() { SY.cancelRequest(); pendingReqActive = false; toast('Request cancelled'); render(); }
 
   function liveSetupNeeded() {
     const s = sheet('Live sharing not set up yet', `<p class="muted small">To let others watch on their phones, add a free Firebase config to <b>js/firebase-config.js</b> (about 3 minutes). Full steps are in that file and in Settings.</p>
@@ -822,11 +839,15 @@
     $('#ls-ok', s.overlay).onclick = () => s.close();
   }
 
+  let pendingReqActive = false; // I tapped "I'm scoring now" and am waiting for approval
+  let reqSheet = null, reqShownId = null;
+
   /* Subscribe to a room. Applies inbound state only when I'm not the scorer. */
   function enterRoom(code) {
     currentRoom = code;
-    SY.join(code,
-      (payload) => {
+    pendingReqActive = false;
+    SY.join(code, {
+      onMatch: (payload) => {
         APP.syncNames = payload.names || {};
         const m = payload.match; if (!m) return;
         if (SY.amScorer()) return; // I'm the source of truth
@@ -836,8 +857,39 @@
         if (route.name === 'watch') { route = { name: 'live', params: { id: m.id } }; render(); }
         else if ((route.name === 'live' || route.name === 'scorecard') && route.params.id === m.id) render();
       },
-      () => { if (route.name === 'live') render(); }
-    );
+      onScorer: () => {
+        if (pendingReqActive && SY.amScorer()) { pendingReqActive = false; toast('Approved — you are scoring now'); }
+        if (route.name === 'live') render();
+      },
+      onPresence: (count) => { updateViewerBadge(count); },
+      onRequest: (req) => { handleScorerRequest(req); },
+    });
+  }
+
+  function updateViewerBadge(count) {
+    const el = document.getElementById('lv-viewers');
+    if (el) el.textContent = Math.max(0, count - 1);
+  }
+
+  /* Current scorer sees a request and approves/declines. */
+  function handleScorerRequest(req) {
+    const closeSheet = () => { if (reqSheet) { reqSheet.close(); reqSheet = null; reqShownId = null; } };
+    if (!SY.amScorer()) {
+      // requester side: if my pending request vanished without me becoming scorer, it was declined
+      if (pendingReqActive && !req) { pendingReqActive = false; toast('Request declined'); if (route.name === 'live') render(); }
+      closeSheet(); return;
+    }
+    if (!req || req.id === SY.clientId()) { closeSheet(); return; }
+    if (reqShownId === req.id && reqSheet) return; // already prompting for this request
+    closeSheet();
+    reqShownId = req.id;
+    reqSheet = sheet('Hand over scoring?', `<p><b>${esc(req.name)}</b> wants to score this match.</p>
+      <div class="cap-grid" style="margin-top:12px">
+        <button class="btn primary" id="rq-yes">✓ Approve</button>
+        <button class="btn" id="rq-no">Decline</button>
+      </div>`);
+    $('#rq-yes', reqSheet.overlay).onclick = () => { SY.approveRequest(); closeSheet(); toast('Handed over'); };
+    $('#rq-no', reqSheet.overlay).onclick = () => { SY.declineRequest(); closeSheet(); };
   }
 
   function watchRoom(code) {

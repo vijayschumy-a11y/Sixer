@@ -8,7 +8,11 @@
   if (!clientId) { clientId = 'c_' + Math.random().toString(36).slice(2, 10); localStorage.setItem(CLIENT_KEY, clientId); }
 
   let fb = null, database = null, inited = false, initFailed = false;
-  const state = { code: null, scorer: null, refs: [], onMatch: null, onScorer: null };
+  const state = {
+    code: null, scorer: null, presence: {}, refs: [],
+    heartbeat: null, connRef: null, connCb: null, meRef: null,
+    onMatch: null, onScorer: null, onPresence: null, onRequest: null,
+  };
 
   function configured() {
     const c = window.SIXER_FIREBASE;
@@ -52,22 +56,75 @@
       .catch((e) => { console.warn('createRoom failed', e); return null; });
   }
 
-  /* Subscribe to a room. onMatch(payload) / onScorer(scorerObj) fire on every change. */
-  function join(code, onMatch, onScorer) {
+  /* Subscribe to a room. cbs = { onMatch, onScorer, onPresence, onRequest }. */
+  function join(code, cbs) {
     if (!init()) return false;
     leave();
-    state.code = code; state.onMatch = onMatch; state.onScorer = onScorer;
-    const dataRef = database.ref('rooms/' + code + '/data');
-    const scorerRef = database.ref('rooms/' + code + '/scorer');
-    const dataCb = dataRef.on('value', (s) => { const v = s.val(); if (v && onMatch) onMatch(v); });
-    const scorerCb = scorerRef.on('value', (s) => { state.scorer = s.val(); if (onScorer) onScorer(state.scorer); });
-    state.refs = [[dataRef, dataCb], [scorerRef, scorerCb]];
+    cbs = cbs || {};
+    state.code = code;
+    state.onMatch = cbs.onMatch; state.onScorer = cbs.onScorer;
+    state.onPresence = cbs.onPresence; state.onRequest = cbs.onRequest;
+    const base = 'rooms/' + code;
+    const dataRef = database.ref(base + '/data');
+    const scorerRef = database.ref(base + '/scorer');
+    const presRef = database.ref(base + '/presence');
+    const reqRef = database.ref(base + '/request');
+    const dataCb = dataRef.on('value', (s) => { const v = s.val(); if (v && state.onMatch) state.onMatch(v); });
+    const scorerCb = scorerRef.on('value', (s) => { state.scorer = s.val(); if (state.onScorer) state.onScorer(state.scorer); });
+    const presCb = presRef.on('value', (s) => { state.presence = s.val() || {}; if (state.onPresence) state.onPresence(presenceCount(), state.presence); });
+    const reqCb = reqRef.on('value', (s) => { if (state.onRequest) state.onRequest(s.val()); });
+    state.refs = [[dataRef, dataCb], [scorerRef, scorerCb], [presRef, presCb], [reqRef, reqCb]];
+    registerPresence(code);
     return true;
   }
 
+  /* Presence: mark this device connected; auto-remove on disconnect; heartbeat. */
+  function registerPresence(code) {
+    const meRef = database.ref('rooms/' + code + '/presence/' + clientId);
+    state.meRef = meRef;
+    const connRef = database.ref('.info/connected');
+    state.connRef = connRef;
+    state.connCb = connRef.on('value', (s) => {
+      if (s.val() === true) { meRef.onDisconnect().remove(); meRef.set(Date.now()); }
+    });
+    state.heartbeat = setInterval(() => { try { meRef.set(Date.now()); } catch (e) {} }, 25000);
+  }
+
+  function presenceCount() { return Object.keys(state.presence || {}).length; }
+  function viewerCount() { return Math.max(0, presenceCount() - 1); } // everyone except the one scorer
+  function isPresent(id) { return !!(id && state.presence && state.presence[id]); }
+
   function leave() {
     state.refs.forEach(([ref, cb]) => { try { ref.off('value', cb); } catch (e) {} });
-    state.refs = []; state.code = null; state.scorer = null; state.onMatch = null; state.onScorer = null;
+    if (state.heartbeat) clearInterval(state.heartbeat);
+    if (state.connRef && state.connCb) { try { state.connRef.off('value', state.connCb); } catch (e) {} }
+    if (state.meRef) { try { state.meRef.remove(); } catch (e) {} }
+    state.refs = []; state.heartbeat = null; state.connRef = null; state.connCb = null; state.meRef = null;
+    state.code = null; state.scorer = null; state.presence = {};
+    state.onMatch = state.onScorer = state.onPresence = state.onRequest = null;
+  }
+
+  /* ----- Request-to-score handshake ----- */
+  function requestScorer(name) {
+    if (!database || !state.code) return Promise.resolve(false);
+    return database.ref('rooms/' + state.code + '/request').set({ id: clientId, name: name || 'Scorer', ts: Date.now() }).then(() => true).catch(() => false);
+  }
+  function cancelRequest() {
+    if (!database || !state.code) return Promise.resolve();
+    return database.ref('rooms/' + state.code + '/request').remove().catch(() => {});
+  }
+  function approveRequest() {
+    if (!database || !state.code) return Promise.resolve(false);
+    const base = 'rooms/' + state.code;
+    return database.ref(base + '/request').once('value').then((s) => {
+      const req = s.val(); if (!req) return false;
+      return database.ref(base + '/scorer').set({ id: req.id, name: req.name, ts: Date.now() })
+        .then(() => database.ref(base + '/request').remove()).then(() => true);
+    }).catch(() => false);
+  }
+  function declineRequest() {
+    if (!database || !state.code) return Promise.resolve();
+    return database.ref('rooms/' + state.code + '/request').remove().catch(() => {});
   }
 
   /* Push the latest match state (only meaningful when you are the scorer). */
@@ -85,6 +142,8 @@
 
   APP.sync = {
     configured, available, init, createRoom, join, leave, publish, claimScorer,
+    requestScorer, cancelRequest, approveRequest, declineRequest,
+    presenceCount, viewerCount, isPresent,
     amScorer, clientId: () => clientId,
     currentScorer: () => state.scorer,
     activeCode: () => state.code,
