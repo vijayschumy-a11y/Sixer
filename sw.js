@@ -1,5 +1,5 @@
 /* Sixer service worker — offline-first cache. */
-const CACHE = 'sixer-v7';
+const CACHE = 'sixer-v8';
 const ASSETS = [
   './', './index.html',
   './css/styles.css',
@@ -10,10 +10,15 @@ const ASSETS = [
   './icons/icon.svg', './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png',
 ];
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)).then(() => self.skipWaiting()));
+  // Don't auto-activate — wait so the app can offer an explicit "Update" to the user.
+  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)));
 });
 self.addEventListener('activate', (e) => {
   e.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)))).then(() => self.clients.claim()));
+});
+// The page posts this when the user taps "Update" — then we take over and it reloads.
+self.addEventListener('message', (e) => {
+  if (e.data && e.data.type === 'SKIP_WAITING') self.skipWaiting();
 });
 /* Network-first with a short timeout, falling back to cache.
    Keeps the app fully usable offline (on the ground, no signal) while making

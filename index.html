@@ -54,7 +54,22 @@
   <script src="js/app.js"></script>
   <script>
     if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
-      navigator.serviceWorker.register('sw.js').catch(()=>{});
+      var __reloaded = false;
+      navigator.serviceWorker.addEventListener('controllerchange', function () {
+        if (__reloaded) return; __reloaded = true; location.reload();
+      });
+      navigator.serviceWorker.register('sw.js').then(function (reg) {
+        function ready() { if (window.Sixer && window.Sixer.onUpdateReady) window.Sixer.onUpdateReady(reg); }
+        if (reg.waiting && navigator.serviceWorker.controller) ready();
+        reg.addEventListener('updatefound', function () {
+          var nw = reg.installing; if (!nw) return;
+          nw.addEventListener('statechange', function () {
+            if (nw.state === 'installed' && navigator.serviceWorker.controller) ready();
+          });
+        });
+        // check for a new version whenever the app regains focus
+        document.addEventListener('visibilitychange', function () { if (!document.hidden) reg.update().catch(function(){}); });
+      }).catch(function(){});
     }
   </script>
 </body>

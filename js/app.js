@@ -841,11 +841,13 @@
 
   let pendingReqActive = false; // I tapped "I'm scoring now" and am waiting for approval
   let reqSheet = null, reqShownId = null;
+  let lastScorerId = null;      // to detect scorer handovers and toast viewers
 
   /* Subscribe to a room. Applies inbound state only when I'm not the scorer. */
   function enterRoom(code) {
     currentRoom = code;
     pendingReqActive = false;
+    lastScorerId = null;
     SY.join(code, {
       onMatch: (payload) => {
         APP.syncNames = payload.names || {};
@@ -857,8 +859,12 @@
         if (route.name === 'watch') { route = { name: 'live', params: { id: m.id } }; render(); }
         else if ((route.name === 'live' || route.name === 'scorecard') && route.params.id === m.id) render();
       },
-      onScorer: () => {
+      onScorer: (scorer) => {
         if (pendingReqActive && SY.amScorer()) { pendingReqActive = false; toast('Approved — you are scoring now'); }
+        else if (scorer && scorer.id !== lastScorerId && lastScorerId !== null && scorer.id !== SY.clientId()) {
+          toast(scorer.name + ' is now scoring');
+        }
+        if (scorer) lastScorerId = scorer.id;
         if (route.name === 'live') render();
       },
       onPresence: (count) => { updateViewerBadge(count); },
@@ -1485,6 +1491,21 @@
     newmatch: newMatchScreen, live: liveScreen, scorecard: scorecardScreen,
     stats: statsScreen, sessions: sessionsScreen, session: sessionScreen,
     cup: cupScreen, watch: watchScreen, settings: settingsScreen,
+  };
+
+  // PWA update prompt — shown when a new deployed version is ready to install
+  APP.onUpdateReady = function (reg) {
+    if (document.getElementById('update-bar')) return;
+    const bar = document.createElement('div');
+    bar.id = 'update-bar';
+    bar.className = 'update-bar';
+    bar.innerHTML = `<span>🔄 New version of ${esc(BRAND)} is ready</span><button class="btn sm" id="upd-now">Update</button>`;
+    document.body.appendChild(bar);
+    document.getElementById('upd-now').onclick = () => {
+      document.getElementById('upd-now').textContent = 'Updating…';
+      if (reg.waiting) reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+      else location.reload();
+    };
   };
 
   $$('#bottomnav button').forEach((b) => b.onclick = () => { if (b.dataset.route === 'newmatch') draft = null; go(b.dataset.route); });
