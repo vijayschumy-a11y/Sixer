@@ -127,6 +127,24 @@
     return database.ref('rooms/' + state.code + '/request').remove().catch(() => {});
   }
 
+  /* One-shot read of a room's current state (for the Home rejoin banner). */
+  function peekRoom(code) {
+    if (!init()) return Promise.resolve(null);
+    const base = 'rooms/' + code;
+    return Promise.all([
+      database.ref(base + '/data').once('value'),
+      database.ref(base + '/scorer').once('value'),
+    ]).then(([d, s]) => {
+      const data = d.val();
+      if (!data || !data.match) return { code, exists: false };
+      const m = data.match;
+      const title = (m.teams && m.teams.length) ? m.teams.map((t) => t.name).join(' vs ') : 'Live match';
+      const inn = m.innings && m.innings.length ? m.innings[m.innings.length - 1] : null;
+      const score = inn ? (inn.runs + '/' + inn.wickets) : '';
+      return { code, exists: true, status: m.status, title, score, scorer: (s.val() || {}).name || '' };
+    }).catch(() => ({ code, exists: false }));
+  }
+
   /* Push the latest match state (only meaningful when you are the scorer). */
   function publish(match) {
     if (!database || !state.code) return;
@@ -142,7 +160,7 @@
 
   APP.sync = {
     configured, available, init, createRoom, join, leave, publish, claimScorer,
-    requestScorer, cancelRequest, approveRequest, declineRequest,
+    requestScorer, cancelRequest, approveRequest, declineRequest, peekRoom,
     presenceCount, viewerCount, isPresent,
     amScorer, clientId: () => clientId,
     currentScorer: () => state.scorer,

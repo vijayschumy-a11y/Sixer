@@ -51,6 +51,10 @@
         ${live.map((m) => liveCardHTML(m)).join('')}
       </div>` : ''}
 
+      <div id="rejoin-slot"></div>`;
+    // (rest appended below)
+    screen.innerHTML += `
+
       <div class="grid cols-2" style="margin-top:12px">
         ${statTile(players.length, 'Players')}
         ${statTile(matches.length, 'Matches')}
@@ -82,6 +86,28 @@
       const m = S.Matches.get(e.dataset.match);
       go(m.status === 'live' ? 'live' : 'scorecard', { id: m.id });
     });
+    loadRejoinBanner();
+  }
+
+  /* Check saved rooms against Firebase; show still-live ones for one-tap rejoin. */
+  function loadRejoinBanner() {
+    const recent = S.Rooms.recent();
+    const slot = document.getElementById('rejoin-slot');
+    if (!slot || !recent.length || !SY.available()) return;
+    const localLive = new Set(S.Matches.live().map((m) => m.roomCode).filter(Boolean));
+    Promise.all(recent.map((r) => SY.peekRoom(r.code))).then((results) => {
+      results.forEach((x) => { if (x && (!x.exists || x.status === 'complete')) S.Rooms.forget(x.code); });
+      const live = results.filter((x) => x && x.exists && x.status === 'live' && !localLive.has(x.code));
+      if (route.name !== 'home') return;
+      if (!live.length) { slot.innerHTML = ''; return; }
+      slot.innerHTML = `<div class="card" style="border-color:#5a2020;margin-top:12px">
+        <div class="row spread"><b>Live to watch</b><span class="badge live">● LIVE</span></div>
+        ${live.map((x) => `<div class="list-link rejoin" data-code="${esc(x.code)}" style="margin-top:10px">
+          <div style="min-width:0"><b>${esc(x.title || 'Live match')}</b>
+            <div class="small muted">${x.score ? esc(x.score) + ' · ' : ''}${x.scorer ? esc(x.scorer) + ' scoring · ' : ''}code ${esc(x.code)}</div></div>
+          <span class="badge live">Rejoin ▸</span></div>`).join('')}</div>`;
+      slot.querySelectorAll('.rejoin').forEach((el) => el.onclick = () => watchRoom(el.dataset.code));
+    }).catch(() => {});
   }
 
   function liveCardHTML(m) {
@@ -842,16 +868,23 @@
   let pendingReqActive = false; // I tapped "I'm scoring now" and am waiting for approval
   let reqSheet = null, reqShownId = null;
   let lastScorerId = null;      // to detect scorer handovers and toast viewers
+  let roomRemembered = false;   // saved this room to recent list once per join
 
   /* Subscribe to a room. Applies inbound state only when I'm not the scorer. */
   function enterRoom(code) {
     currentRoom = code;
     pendingReqActive = false;
     lastScorerId = null;
+    roomRemembered = false;
     SY.join(code, {
       onMatch: (payload) => {
         APP.syncNames = payload.names || {};
         const m = payload.match; if (!m) return;
+        // remember this room so it can be rejoined from Home with one tap
+        if (m.status === 'live') {
+          const title = (m.teams && m.teams.length) ? m.teams.map((t) => t.name).join(' vs ') : 'Live match';
+          if (!roomRemembered) { S.Rooms.remember(code, title); roomRemembered = true; }
+        } else { S.Rooms.forget(code); }
         if (SY.amScorer()) return; // I'm the source of truth
         const local = S.Matches.get(m.id);
         if (local && !local.remote) { Object.assign(local, m); S.Matches.save(local); }

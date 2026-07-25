@@ -9,6 +9,7 @@
     teams: [],     // {id,name,players:[pid],createdAt}
     tournaments: [], // {id,name,date,format,teamIds:[],rules:{},fixtures:[],status}
     sessions: [],  // {id,name,date,note}
+    recentRooms: [], // {code,title,ts} — shared live matches this device has joined
     matches: [],   // see scoring.js for shape
     settings: {
       appName: 'Sixer',
@@ -152,6 +153,18 @@
     live: () => db.matches.filter((m) => m.status === 'live').sort((a, b) => b.date - a.date),
   };
 
+  /* ---------- Recent live rooms (for one-tap rejoin) ---------- */
+  const Rooms = {
+    recent: () => (db.recentRooms || []).slice(),
+    remember(code, title) {
+      db.recentRooms = (db.recentRooms || []).filter((r) => r.code !== code);
+      db.recentRooms.unshift({ code, title: title || 'Live match', ts: Date.now() });
+      if (db.recentRooms.length > 6) db.recentRooms.length = 6;
+      persist();
+    },
+    forget(code) { db.recentRooms = (db.recentRooms || []).filter((r) => r.code !== code); persist(); },
+  };
+
   /* ---------- Settings / backup ---------- */
   const Settings = {
     get: () => db.settings,
@@ -169,5 +182,5 @@
   function wipe() { db = blank(); persist(); }
 
   APP.uid = uid;
-  APP.store = { Players, Teams, Tournaments, Sessions, Matches, Settings, exportJSON, importJSON, wipe, raw: () => db };
+  APP.store = { Players, Teams, Tournaments, Sessions, Matches, Rooms, Settings, exportJSON, importJSON, wipe, raw: () => db };
 })();
