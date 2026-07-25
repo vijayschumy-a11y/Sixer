@@ -2,7 +2,17 @@
 (function () {
   const APP = window.Sixer;
   const { $, $$, esc, toast, avatar, pname, sheet, pick, confirm, prompt, statTile, fmtDate, fmtDay, download } = APP.ui;
-  const S = APP.store, SC = APP.scoring, ST = APP.stats, TR = APP.tournament;
+  const S = APP.store, SC = APP.scoring, ST = APP.stats, TR = APP.tournament, SY = APP.sync;
+
+  // player object, or a lightweight stand-in for viewers who don't hold the squad locally
+  const pl = (id) => S.Players.get(id) || { id, name: APP.ui.pname(id), role: '' };
+
+  function deviceName() {
+    let n = localStorage.getItem('sixer.deviceName');
+    if (!n) { n = 'Scorer'; }
+    return n;
+  }
+  function setDeviceName(n) { if (n) localStorage.setItem('sixer.deviceName', n); }
 
   const BRAND = S.Settings.get().appName || 'Sixer';
 
@@ -49,8 +59,9 @@
       <button class="btn primary block" style="margin-top:14px;padding:16px" id="h-new">🏏 Start a new match</button>
       <div class="grid cols-2" style="margin-top:10px">
         <button class="btn" id="h-addp">➕ Add player</button>
-        <button class="btn" id="h-stats">📊 Leaderboards</button>
+        <button class="btn" id="h-watch">👀 Watch live</button>
       </div>
+      <button class="btn ghost block" id="h-stats" style="margin-top:10px">📊 Leaderboards</button>
 
       <div class="screen-title" style="margin-top:22px"><h2 style="font-size:18px">Recent results</h2></div>
       ${recent.length ? recent.map((m) => matchListItem(m)).join('') :
@@ -61,6 +72,10 @@
     `;
     $('#h-new').onclick = () => go('newmatch');
     $('#h-addp').onclick = () => go('players', { add: true });
+    $('#h-watch').onclick = () => {
+      if (!SY.available()) return liveSetupNeeded();
+      prompt('Watch a live match', 'Enter the 4-letter match code', '', (v) => watchRoom(v), 'e.g. KPWA');
+    };
     $('#h-stats').onclick = () => go('stats');
     $('#h-settings').onclick = () => go('settings');
     $$('#screen [data-match]').forEach((e) => e.onclick = () => {
@@ -440,8 +455,8 @@
   /* Pick openers/bowler then start the innings. */
   function openInningsFlow(match) {
     const battingTeam = match.innings.length === 0 ? SC.battingTeamFirst(match) : (match.innings[0].battingTeam === 0 ? 1 : 0);
-    const batPlayers = match.teams[battingTeam].players.map((id) => S.Players.get(id)).filter(Boolean);
-    const bowlPlayers = match.teams[battingTeam === 0 ? 1 : 0].players.map((id) => S.Players.get(id)).filter(Boolean);
+    const batPlayers = match.teams[battingTeam].players.map(pl);
+    const bowlPlayers = match.teams[battingTeam === 0 ? 1 : 0].players.map(pl);
     const single = match.rules.singleBatsman;
     let striker = null, nonStriker = null;
 
@@ -461,7 +476,7 @@
     pick(title, players.map((p) => ({ id: p.id, html: playerOptHTML(p) })), cb, { allowNone });
   }
   function playerOptHTML(p) {
-    return `${avatar(p)}<div style="flex:1"><div>${esc(p.name)}</div><div class="small muted">${ROLE_LABEL[p.role]}</div></div>`;
+    return `${avatar(p)}<div style="flex:1"><div>${esc(p.name)}</div><div class="small muted">${ROLE_LABEL[p.role] || ''}</div></div>`;
   }
 
   /* =========================================================
@@ -474,11 +489,17 @@
     const inn = SC.cur(match);
     const r = match.rules;
 
-    actions.innerHTML = `<button class="btn sm ghost" id="lv-undo" ${SC.canUndo(match) ? '' : 'disabled'}>↺ Undo</button>`;
+    const shared = !!match.roomCode;
+    const amScorer = !shared || SY.amScorer();
+    const scorerName = shared && SY.currentScorer() ? SY.currentScorer().name : '';
+    // save locally + push to viewers when I hold the pen
+    const persist = () => { S.Matches.save(match); if (shared && SY.amScorer()) SY.publish(match); };
 
-    const striker = S.Players.get(inn.striker);
-    const nonStriker = inn.nonStriker ? S.Players.get(inn.nonStriker) : null;
-    const bowler = inn.bowler ? S.Players.get(inn.bowler) : null;
+    actions.innerHTML = amScorer ? `<button class="btn sm ghost" id="lv-undo" ${SC.canUndo(match) ? '' : 'disabled'}>↺ Undo</button>` : '';
+
+    const striker = inn.striker ? pl(inn.striker) : null;
+    const nonStriker = inn.nonStriker ? pl(inn.nonStriker) : null;
+    const bowler = inn.bowler ? pl(inn.bowler) : null;
     const bs = inn.striker ? inn.batStats[inn.striker] : null;
     const ns = inn.nonStriker ? inn.batStats[inn.nonStriker] : null;
     const bw = inn.bowler ? inn.bowlStats[inn.bowler] : null;
@@ -486,7 +507,47 @@
     const ballsLeft = r.oversPerInnings * 6 - inn.legalBalls;
     const thisOver = currentOverBalls(inn);
 
+    const liveBanner = shared
+      ? `<div class="live-banner ${amScorer ? 'me' : ''}">
+           <span><span class="dot"></span>LIVE · ${match.roomCode}${amScorer ? ' · you are scoring' : (scorerName ? ' · ' + esc(scorerName) + ' scoring' : '')}</span>
+           <button class="btn sm" id="lv-share">Share</button>
+         </div>`
+      : `<button class="btn accent block" id="lv-golive" style="margin-bottom:10px">📡 Go Live — let others watch on their phones</button>`;
+
+    const scoringPad = `
+      <div class="pad">
+        ${[0, 1, 2, 3].map((n) => runBtn(n)).join('')}
+      </div>
+      <div class="pad">
+        ${runBtn(4, 'four')}${runBtn(5)}${runBtn(6, 'six')}
+        <button class="run-btn wkt-btn" id="lv-wkt">OUT</button>
+      </div>
+      <div class="pad-row">
+        <button class="btn" data-ex="wide">Wide</button>
+        <button class="btn" data-ex="noball">No-ball</button>
+        <button class="btn" data-ex="bye">Bye</button>
+        <button class="btn" data-ex="legbye">Leg bye</button>
+      </div>
+      <div class="pad-row">
+        <button class="btn undo" id="lv-undo2" ${SC.canUndo(match) ? '' : 'disabled'}>↺ Undo last ball</button>
+        <button class="btn sm" id="lv-swap">⇄ Swap</button>
+        <button class="btn sm" id="lv-bowler">🎯 Bowler</button>
+      </div>
+      <div class="pad-row" style="grid-template-columns:1fr 1fr">
+        <button class="btn sm" id="lv-card">📋 Scorecard</button>
+        <button class="btn sm" id="lv-more">⋯ More</button>
+      </div>`;
+
+    const watchPanel = `
+      <div class="card center" style="margin-top:12px">
+        <div style="font-size:15px">👀 You're watching live</div>
+        <div class="small muted" style="margin:4px 0 12px">${scorerName ? esc(scorerName) + ' is scoring.' : ''} Updates appear automatically.</div>
+        <button class="btn primary block" id="lv-takeover">🖊️ I'm scoring now</button>
+        <button class="btn sm ghost block" id="lv-card" style="margin-top:8px">📋 Full scorecard</button>
+      </div>`;
+
     screen.innerHTML = `
+      ${liveBanner}
       <div class="scoreboard">
         <div class="row spread teams">
           <span>${esc(SC.teamName(match, inn.battingTeam))} batting</span>
@@ -517,30 +578,9 @@
         </div>
       </div>
 
-      ${inn.freeHit ? `<div class="target-banner" style="background:#33260e;border-color:#6a4f15;color:var(--accent)">⚡ FREE HIT</div>` : ''}
+      ${inn.freeHit && amScorer ? `<div class="target-banner" style="background:#33260e;border-color:#6a4f15;color:var(--accent)">⚡ FREE HIT</div>` : ''}
 
-      <div class="pad">
-        ${[0, 1, 2, 3].map((n) => runBtn(n)).join('')}
-      </div>
-      <div class="pad">
-        ${runBtn(4, 'four')}${runBtn(5)}${runBtn(6, 'six')}
-        <button class="run-btn wkt-btn" id="lv-wkt">OUT</button>
-      </div>
-      <div class="pad-row">
-        <button class="btn" data-ex="wide">Wide</button>
-        <button class="btn" data-ex="noball">No-ball</button>
-        <button class="btn" data-ex="bye">Bye</button>
-        <button class="btn" data-ex="legbye">Leg bye</button>
-      </div>
-      <div class="pad-row">
-        <button class="btn undo" id="lv-undo2" ${SC.canUndo(match) ? '' : 'disabled'}>↺ Undo last ball</button>
-        <button class="btn sm" id="lv-swap">⇄ Swap</button>
-        <button class="btn sm" id="lv-bowler">🎯 Bowler</button>
-      </div>
-      <div class="pad-row" style="grid-template-columns:1fr 1fr">
-        <button class="btn sm" id="lv-card">📋 Scorecard</button>
-        <button class="btn sm" id="lv-more">⋯ More</button>
-      </div>
+      ${amScorer ? scoringPad : watchPanel}
 
       <div class="card" style="margin-top:14px">
         <div class="small muted" style="margin-bottom:6px">Commentary</div>
@@ -555,19 +595,26 @@
     const pairBatting = !match.rules.singleBatsman && !inn.lastMan;
     const needBatsman = !inn.closed && (!inn.striker || (pairBatting && !inn.nonStriker));
 
-    const doUndo = () => { if (SC.undo(match)) { S.Matches.save(match); pendingStrikeAsk = false; toast('Undone'); render(); } };
-    $('#lv-undo').onclick = doUndo;
-    $('#lv-undo2').onclick = doUndo;
-    $$('#screen [data-run]').forEach((b) => b.onclick = () => ball({ runs: parseInt(b.dataset.run, 10) }));
-    $$('#screen [data-ex]').forEach((b) => b.onclick = () => extraFlow(b.dataset.ex));
-    $('#lv-wkt').onclick = () => wicketFlow();
-    $('#lv-swap').onclick = () => { SC.manualSwap(match); S.Matches.save(match); render(); };
-    $('#lv-bowler').onclick = () => chooseBowler();
-    $('#lv-card').onclick = () => go('scorecard', { id: match.id });
-    $('#lv-more').onclick = () => moreMenu();
+    // always available (viewer + scorer)
+    const cardBtn = $('#lv-card'); if (cardBtn) cardBtn.onclick = () => go('scorecard', { id: match.id });
+    if ($('#lv-share')) $('#lv-share').onclick = () => shareLiveSheet(match);
+    if ($('#lv-golive')) $('#lv-golive').onclick = () => goLive(match);
+    if ($('#lv-takeover')) $('#lv-takeover').onclick = () => takeOver(match);
 
-    if (needBatsman) setTimeout(() => chooseBatsman(), 150);
-    else if (needBowler) setTimeout(() => chooseBowler(), 150);
+    if (amScorer) {
+      const doUndo = () => { if (SC.undo(match)) { persist(); pendingStrikeAsk = false; toast('Undone'); render(); } };
+      if ($('#lv-undo')) $('#lv-undo').onclick = doUndo;
+      $('#lv-undo2').onclick = doUndo;
+      $$('#screen [data-run]').forEach((b) => b.onclick = () => ball({ runs: parseInt(b.dataset.run, 10) }));
+      $$('#screen [data-ex]').forEach((b) => b.onclick = () => extraFlow(b.dataset.ex));
+      $('#lv-wkt').onclick = () => wicketFlow();
+      $('#lv-swap').onclick = () => { SC.manualSwap(match); persist(); render(); };
+      $('#lv-bowler').onclick = () => chooseBowler();
+      $('#lv-more').onclick = () => moreMenu();
+
+      if (needBatsman) setTimeout(() => chooseBatsman(), 150);
+      else if (needBowler) setTimeout(() => chooseBowler(), 150);
+    }
 
     function ball(input) {
       if (inn.closed) return;
@@ -579,7 +626,7 @@
         input = Object.assign({}, input, { runs: 0 });
       }
       const res = SC.recordBall(match, input);
-      S.Matches.save(match);
+      persist();
       handlePost(res);
     }
 
@@ -626,7 +673,7 @@
         ? [{ id: 'runout', t: 'Run out' }]
         : [{ id: 'bowled', t: 'Bowled' }, { id: 'caught', t: 'Caught' }, { id: 'lbw', t: 'LBW' },
            { id: 'runout', t: 'Run out' }, { id: 'stumped', t: 'Stumped' }, { id: 'hitwicket', t: 'Hit wicket' }];
-      const fielders = match.teams[inn.bowlingTeam].players.map((id) => S.Players.get(id)).filter(Boolean);
+      const fielders = match.teams[inn.bowlingTeam].players.map(pl);
       const s = sheet('How out?', `
         <div class="opt-list" id="wk-types">
           ${types.map((t) => `<button class="opt" data-wt="${t.id}">${t.t}</button>`).join('')}
@@ -678,16 +725,16 @@
     function chooseBatsman() {
       const batTeam = match.teams[inn.battingTeam].players;
       const atCrease = [inn.striker, inn.nonStriker].filter(Boolean);
-      const avail = batTeam.map((id) => S.Players.get(id)).filter((p) => p && !atCrease.includes(p.id) && !(inn.batStats[p.id] && inn.batStats[p.id].out));
+      const avail = batTeam.map(pl).filter((p) => !atCrease.includes(p.id) && !(inn.batStats[p.id] && inn.batStats[p.id].out));
       if (!avail.length) { toast('No batters left'); return; }
       pickPlayer('New batter in', avail, (pid) => {
-        SC.setNewBatsman(match, pid); S.Matches.save(match);
+        SC.setNewBatsman(match, pid); persist();
         const finish = () => { if (!inn.bowler) chooseBowler(); else render(); };
         // after a run out the batters may have crossed — let the scorer set the ends
         if (pendingStrikeAsk && inn.striker && inn.nonStriker) {
           pendingStrikeAsk = false;
           pick('Who is on strike now?', [inn.striker, inn.nonStriker].map((id) => ({ id, label: pname(id) })), (sid) => {
-            SC.setStriker(match, sid); S.Matches.save(match); finish();
+            SC.setStriker(match, sid); persist(); finish();
           });
         } else { pendingStrikeAsk = false; finish(); }
       });
@@ -695,10 +742,10 @@
 
     function chooseBowler() {
       const bowlTeam = match.teams[inn.bowlingTeam].players;
-      let avail = bowlTeam.map((id) => S.Players.get(id)).filter(Boolean);
+      let avail = bowlTeam.map(pl);
       if (inn.prevBowler && avail.length > 1) avail = avail.filter((p) => p.id !== inn.prevBowler);
       pickPlayer('Bowler for this over', avail, (pid) => {
-        SC.setNewBowler(match, pid); S.Matches.save(match); render();
+        SC.setNewBowler(match, pid); persist(); render();
       });
     }
 
@@ -712,7 +759,7 @@
       </div>`);
       $$('.opt', s.overlay).forEach((b) => b.onclick = () => {
         const act = b.dataset.act; s.close();
-        if (act === 'endinn') confirm('End innings?', 'Close the current innings now?', () => { SC.endInningsManually(match, 'Declared'); S.Matches.save(match); if (match.status === 'complete') go('scorecard', { id: match.id }); else inningsEnd(); });
+        if (act === 'endinn') confirm('End innings?', 'Close the current innings now?', () => { SC.endInningsManually(match, 'Declared'); persist(); if (match.status === 'complete') go('scorecard', { id: match.id }); else inningsEnd(); });
         else if (act === 'retire') retireStriker();
         else if (act === 'rename') renameTeams(match);
         else if (act === 'card') go('scorecard', { id: match.id });
@@ -722,6 +769,91 @@
     function retireStriker() {
       ball({ runs: 0, wicket: { type: 'retired', who: 'striker', fielder: null } });
     }
+  }
+
+  /* =========================================================
+     LIVE SHARING (Firebase)
+  ========================================================= */
+  let currentRoom = null;
+
+  function goLive(match) {
+    if (!SY.available()) return liveSetupNeeded();
+    const start = () => SY.createRoom(match, deviceName()).then((code) => {
+      if (!code) return toast('Could not start live — check Firebase setup', 'err');
+      match.roomCode = code; S.Matches.save(match);
+      enterRoom(code);
+      render();
+      shareLiveSheet(match);
+    });
+    if (!localStorage.getItem('sixer.deviceName')) {
+      prompt('Your name', 'Shown to viewers as the scorer', '', (v) => { setDeviceName(v || 'Scorer'); start(); }, 'e.g. Vijay');
+    } else start();
+  }
+
+  function shareLiveSheet(match) {
+    const code = match.roomCode;
+    const link = location.origin + location.pathname + '?watch=' + code;
+    const s = sheet('Share live match', `
+      <div class="center">
+        <div class="small muted">Anyone with this link can watch live — and tap “I'm scoring now” to take over.</div>
+        <div style="font-size:36px;font-weight:900;letter-spacing:8px;margin:12px 0;color:var(--accent)">${code}</div>
+      </div>
+      <input id="sh-link" value="${esc(link)}" readonly>
+      <div class="cap-grid" style="margin-top:10px">
+        <button class="btn primary" id="sh-share">Share link</button>
+        <button class="btn" id="sh-copy">Copy link</button>
+      </div>`);
+    $('#sh-link', s.overlay).onclick = (e) => e.target.select();
+    $('#sh-copy', s.overlay).onclick = () => { try { navigator.clipboard.writeText(link); } catch (e) {} toast('Link copied'); };
+    $('#sh-share', s.overlay).onclick = () => {
+      if (navigator.share) navigator.share({ title: SC.teamName(match, 0) + ' vs ' + SC.teamName(match, 1), text: 'Watch live on Sixer', url: link }).catch(() => {});
+      else { try { navigator.clipboard.writeText(link); } catch (e) {} toast('Link copied'); }
+    };
+  }
+
+  function takeOver(match) {
+    if (!SY.available()) return;
+    SY.claimScorer(deviceName()).then((ok) => { if (ok) { toast('You are scoring now'); render(); } else toast('Could not take over', 'err'); });
+  }
+
+  function liveSetupNeeded() {
+    const s = sheet('Live sharing not set up yet', `<p class="muted small">To let others watch on their phones, add a free Firebase config to <b>js/firebase-config.js</b> (about 3 minutes). Full steps are in that file and in Settings.</p>
+      <button class="btn primary block" id="ls-ok">Got it</button>`);
+    $('#ls-ok', s.overlay).onclick = () => s.close();
+  }
+
+  /* Subscribe to a room. Applies inbound state only when I'm not the scorer. */
+  function enterRoom(code) {
+    currentRoom = code;
+    SY.join(code,
+      (payload) => {
+        APP.syncNames = payload.names || {};
+        const m = payload.match; if (!m) return;
+        if (SY.amScorer()) return; // I'm the source of truth
+        const local = S.Matches.get(m.id);
+        if (local && !local.remote) { Object.assign(local, m); S.Matches.save(local); }
+        else { m.remote = true; m.roomCode = code; S.Matches.save(m); }
+        if (route.name === 'watch') { route = { name: 'live', params: { id: m.id } }; render(); }
+        else if ((route.name === 'live' || route.name === 'scorecard') && route.params.id === m.id) render();
+      },
+      () => { if (route.name === 'live') render(); }
+    );
+  }
+
+  function watchRoom(code) {
+    if (!SY.available()) return toast('Live sharing isn\'t set up on this app yet', 'err');
+    code = (code || '').trim().toUpperCase();
+    if (!code) return;
+    APP.syncNames = {};
+    go('watch', { code });
+    enterRoom(code);
+  }
+
+  function watchScreen(screen, params) {
+    screen.innerHTML = `<div class="empty"><div class="big">📡</div>Connecting to <b>${esc(params.code || '')}</b>…
+      <div class="small muted" style="margin-top:8px">Waiting for the scorer to send the match. Make sure the code is right.</div>
+      <button class="btn ghost block" id="w-cancel" style="margin-top:16px">Cancel</button></div>`;
+    $('#w-cancel').onclick = () => { SY.leave(); go('home'); };
   }
 
   function renameTeams(match) {
@@ -1248,6 +1380,21 @@
         <button class="btn primary block" id="st-save" style="margin-top:10px">Save defaults</button>
       </div>
       <div class="card">
+        <h4>📡 Live sharing ${SY.configured() ? '<span class="badge done">On</span>' : '<span class="badge">Off</span>'}</h4>
+        <p class="muted small">Let many phones watch one match live, and let anyone take over scoring. Free — powered by Firebase.</p>
+        ${SY.configured()
+          ? `<p class="small" style="color:var(--green)">✓ Connected. Use “📡 Go Live” while scoring to get a share link & code.</p>`
+          : `<ol class="small muted" style="margin:6px 0 0 18px;line-height:1.7">
+               <li>Create a free project at <b>console.firebase.google.com</b></li>
+               <li>Build → <b>Realtime Database</b> → Create (test mode)</li>
+               <li>Project settings → add a <b>Web app</b> → copy its config</li>
+               <li>Paste it into <b>js/firebase-config.js</b> and redeploy</li>
+             </ol>
+             <p class="small muted" style="margin-top:8px">Suggested database rules (anyone with a code can watch/score):</p>
+             <pre class="small" style="background:var(--bg2);border:1px solid var(--line);border-radius:10px;padding:10px;overflow:auto;white-space:pre">{ "rules": { "rooms": { ".read": true, ".write": true } } }</pre>`}
+      </div>
+
+      <div class="card">
         <h4>Backup & restore</h4>
         <p class="muted small">All data lives on this device. Export regularly.</p>
         <button class="btn block" id="st-export" style="margin-top:8px">⬇️ Export backup (JSON)</button>
@@ -1285,11 +1432,14 @@
     home: homeScreen, players: playersScreen, player: playerProfile,
     newmatch: newMatchScreen, live: liveScreen, scorecard: scorecardScreen,
     stats: statsScreen, sessions: sessionsScreen, session: sessionScreen,
-    cup: cupScreen, settings: settingsScreen,
+    cup: cupScreen, watch: watchScreen, settings: settingsScreen,
   };
 
   $$('#bottomnav button').forEach((b) => b.onclick = () => { if (b.dataset.route === 'newmatch') draft = null; go(b.dataset.route); });
   $('#brand-name').textContent = BRAND;
 
-  render();
+  // deep link: ?watch=CODE opens straight into a live match
+  const watchCode = new URLSearchParams(location.search).get('watch');
+  if (watchCode && SY.available()) watchRoom(watchCode);
+  else render();
 })();

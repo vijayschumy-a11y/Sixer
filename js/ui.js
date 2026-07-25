@@ -27,6 +27,8 @@
   }
 
   function pname(pid) {
+    // viewers of a shared match don't have the players locally — use the synced name map
+    if (APP.syncNames && APP.syncNames[pid]) return APP.syncNames[pid];
     const p = APP.store.Players.get(pid);
     return p ? p.name : '—';
   }

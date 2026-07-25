@@ -1,10 +1,11 @@
 /* Sixer service worker — offline-first cache. */
-const CACHE = 'sixer-v4';
+const CACHE = 'sixer-v5';
 const ASSETS = [
   './', './index.html',
   './css/styles.css',
+  './js/firebase-config.js',
   './js/store.js', './js/scoring.js', './js/stats.js', './js/charts.js', './js/tournament.js',
-  './js/photo.js', './js/ui.js', './js/app.js',
+  './js/sync.js', './js/photo.js', './js/ui.js', './js/app.js',
   './manifest.webmanifest',
   './icons/icon.svg', './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png',
 ];

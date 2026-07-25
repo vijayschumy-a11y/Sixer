@@ -134,17 +134,21 @@
     matches: (id) => db.matches.filter((m) => m.sessionId === id),
   };
 
-  /* ---------- Matches ---------- */
+  /* ---------- Matches ----------
+     Matches flagged `remote` (a shared match this device is only watching) live
+     in memory only — never persisted, never counted in local lists or stats. */
+  const remoteReg = {};
   const Matches = {
     all: () => db.matches.slice().sort((a, b) => b.date - a.date),
-    get: (id) => db.matches.find((m) => m.id === id),
+    get: (id) => remoteReg[id] || db.matches.find((m) => m.id === id),
     save(match) {
+      if (match.remote) { remoteReg[match.id] = match; return match; }
       const i = db.matches.findIndex((m) => m.id === match.id);
       if (i >= 0) db.matches[i] = match; else db.matches.push(match);
       persist();
       return match;
     },
-    remove(id) { db.matches = db.matches.filter((m) => m.id !== id); persist(); },
+    remove(id) { delete remoteReg[id]; db.matches = db.matches.filter((m) => m.id !== id); persist(); },
     live: () => db.matches.filter((m) => m.status === 'live').sort((a, b) => b.date - a.date),
   };
 

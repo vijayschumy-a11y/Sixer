@@ -159,6 +159,15 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--green)}
 .chip.sel{background:var(--green-d);border-color:var(--green);color:#bdf5dd}
 .chip:active{transform:scale(.97)}
 
+/* live sharing banner */
+.live-banner{display:flex;align-items:center;justify-content:space-between;gap:10px;
+  background:#2a1414;border:1px solid #5a2020;color:#ffb4b4;border-radius:12px;padding:9px 12px;margin-bottom:10px;font-size:13px;font-weight:600}
+.live-banner.me{background:#0c2e22;border-color:#1c5b43;color:#bdf5dd}
+.live-banner .dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:#ff5d5d;margin-right:7px;animation:pulse 1.4s infinite}
+.live-banner.me .dot{background:#19c37d}
+.live-banner .btn{padding:6px 12px}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+
 /* prominent undo */
 .btn.undo{background:#3a2f10;color:var(--accent);border:1px solid #6a4f15;font-weight:700}
 .btn:disabled{opacity:.35}
