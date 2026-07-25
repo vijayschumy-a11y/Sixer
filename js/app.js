@@ -377,13 +377,11 @@
           <label class="field"><span>Team 1</span><input id="ms-t0" value="${esc(draft.teamNames[0])}"></label>
           <label class="field"><span>Team 2</span><input id="ms-t1" value="${esc(draft.teamNames[1])}"></label>
         </div>
-        <div class="row spread" style="margin:4px 0 8px"><span class="muted small">Tap to assign each player</span>
+        <div class="row spread" style="margin:4px 0 8px"><span class="muted small">Tap a player to add them to a team</span>
           <button class="btn sm" id="ms-quick">➕ Quick add</button></div>
-        <div id="ms-pool" class="plist">
+        <div id="ms-counts" class="team-counts"></div>
+        <div id="ms-pool" class="plist" style="margin-top:8px">
           ${players.length ? players.map(assignRow).join('') : `<div class="muted small">No players yet — add some first.</div>`}
-        </div>
-        <div class="row spread small muted" style="margin-top:8px">
-          <span id="ms-count0">${SC.teamName ? '' : ''}</span>
         </div>
       </div>
 
@@ -419,8 +417,22 @@
       const cur = draft.assign[pid];
       draft.assign[pid] = cur === undefined ? 0 : (cur === 0 ? 1 : undefined);
       if (draft.assign[pid] === undefined) delete draft.assign[pid];
-      saveDraftInputs(); render();
+      const now = draft.assign[pid];
+      el.querySelectorAll('[data-seg]').forEach((s) => s.classList.toggle('on', parseInt(s.dataset.seg, 10) === now));
+      refreshTeamCounts();
     });
+    function refreshTeamCounts() {
+      const a = Object.values(draft.assign).filter((v) => v === 0).length;
+      const b = Object.values(draft.assign).filter((v) => v === 1).length;
+      const n0 = ($('#ms-t0').value.trim() || 'Team A');
+      const n1 = ($('#ms-t1').value.trim() || 'Team B');
+      const el = $('#ms-counts');
+      if (el) el.innerHTML = `<span class="pill on">${esc(n0)}: ${a} player${a !== 1 ? 's' : ''}</span>`
+        + `<span class="pill on b">${esc(n1)}: ${b} player${b !== 1 ? 's' : ''}</span>`;
+    }
+    $('#ms-t0').oninput = refreshTeamCounts;
+    $('#ms-t1').oninput = refreshTeamCounts;
+    refreshTeamCounts();
     $('#ms-session').onchange = (e) => {
       if (e.target.value === '__new__') {
         prompt('New session', 'Session name', 'Week of ' + fmtDate(Date.now()), (v) => {
@@ -447,11 +459,11 @@
 
   function assignRow(p) {
     const a = draft.assign[p.id];
-    const seg = (idx, lbl) => `<span class="pill ${a === idx ? 'on' : ''}" style="min-width:30px;justify-content:center">${lbl}</span>`;
+    const seg = (idx, lbl) => `<span class="pill seg ${idx === 1 ? 'b' : ''} ${a === idx ? 'on' : ''}" data-seg="${idx}" style="min-width:40px;justify-content:center">${esc(lbl)}</span>`;
     return `<div class="prow" data-assign="${p.id}">
       ${avatar(p)}
-      <div class="meta"><div class="nm">${esc(p.name)}</div><div class="sub">${ROLE_LABEL[p.role]}</div></div>
-      <div class="row" style="gap:6px">${seg(0, draft.teamNames[0].slice(0, 6))}${seg(1, draft.teamNames[1].slice(0, 6))}</div>
+      <div class="meta"><div class="nm">${esc(p.name)}</div><div class="sub">${ROLE_LABEL[p.role] || ''}</div></div>
+      <div class="row" style="gap:6px">${seg(0, (draft.teamNames[0] || 'A').slice(0, 6))}${seg(1, (draft.teamNames[1] || 'B').slice(0, 6))}</div>
     </div>`;
   }
 
