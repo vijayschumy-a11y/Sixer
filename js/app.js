@@ -353,8 +353,10 @@
         </div>
         <div class="grid cols-2" style="margin-top:10px">
           <label class="field"><span>Overs / innings</span><input id="ms-overs" type="number" min="1" max="50" value="${r.oversPerInnings}"></label>
-          <label class="field"><span>Players / side</span><input id="ms-pps" type="number" min="2" max="16" value="${r.playersPerSide}"></label>
+          <label class="field"><span>Players / side (bat)</span><input id="ms-pps" type="number" min="2" max="16" value="${r.playersPerSide}"></label>
         </div>
+        <label class="field"><span>Max overs / bowler (0 = no limit)</span><input id="ms-mob" type="number" min="0" max="50" value="${r.maxOversPerBowler || 0}"></label>
+        <p class="muted small" style="margin:0">Squads can be bigger than "players/side" — extras are subs you can bring on mid-match.</p>
       </div>
 
       <div class="card">
@@ -446,6 +448,7 @@
     function saveDraftInputs() {
       draft.rules.oversPerInnings = clampInt($('#ms-overs').value, 1, 50, 6);
       draft.rules.playersPerSide = clampInt($('#ms-pps').value, 2, 16, 8);
+      draft.rules.maxOversPerBowler = clampInt($('#ms-mob').value, 0, 50, 0);
       draft.rules.wideRuns = clampInt($('#ms-wr').value, 0, 5, 1);
       draft.rules.noBallRuns = clampInt($('#ms-nbr').value, 0, 5, 1);
       draft.teamNames[0] = $('#ms-t0').value.trim() || 'Team A';
@@ -525,16 +528,17 @@
     }, 'e.g. Suresh');
   }
 
-  // opts: boolean (allowNone) for back-compat, or { allowNone, onAdd }
+  // opts: boolean (allowNone) for back-compat, or { allowNone, onAdd, sub(p) }
   function pickPlayer(title, players, cb, opts) {
     if (typeof opts === 'boolean') opts = { allowNone: opts };
     opts = opts || {};
-    const items = players.map((p) => ({ id: p.id, html: playerOptHTML(p) }));
+    const items = players.map((p) => ({ id: p.id, html: playerOptHTML(p, opts.sub && opts.sub(p)) }));
     if (opts.onAdd) items.push({ id: '__add__', html: '<div style="flex:1;color:var(--green)">➕ Add a new player…</div>' });
     pick(title, items, (id) => { if (id === '__add__') return opts.onAdd(); cb(id); }, { allowNone: opts.allowNone });
   }
-  function playerOptHTML(p) {
-    return `${avatar(p)}<div style="flex:1"><div>${esc(p.name)}</div><div class="small muted">${ROLE_LABEL[p.role] || ''}</div></div>`;
+  function playerOptHTML(p, subOverride) {
+    const sub = subOverride != null ? subOverride : (ROLE_LABEL[p.role] || '');
+    return `${avatar(p)}<div style="flex:1"><div>${esc(p.name)}</div><div class="small muted">${esc(sub)}</div></div>`;
   }
 
   /* =========================================================
@@ -822,12 +826,50 @@
       const bowlTeam = match.teams[inn.bowlingTeam].players;
       let avail = bowlTeam.map(pl);
       if (inn.prevBowler && avail.length > 1) avail = avail.filter((p) => p.id !== inn.prevBowler);
+      const maxO = match.rules.maxOversPerBowler || 0;
+      const oversOf = (p) => { const w = inn.bowlStats[p.id]; return w ? Math.floor(w.balls / 6) : 0; };
+      if (maxO > 0) {
+        const eligible = avail.filter((p) => oversOf(p) < maxO);
+        if (eligible.length) avail = eligible; else toast('All bowlers at their over limit');
+      }
       const onSelect = (pid) => { SC.setNewBowler(match, pid); persist(); render(); };
-      pickPlayer('Bowler for this over', avail, onSelect, { onAdd: () => addPlayerInMatch(inn.bowlingTeam, onSelect) });
+      pickPlayer('Bowler for this over', avail, onSelect, {
+        onAdd: () => addPlayerInMatch(inn.bowlingTeam, onSelect),
+        sub: (p) => maxO > 0 ? `${oversOf(p)}/${maxO} overs` : `${oversOf(p)} overs bowled`,
+      });
+    }
+
+    function changeOvers() {
+      prompt('Change total overs', 'Overs per innings', String(match.rules.oversPerInnings), (v) => {
+        const n = clampInt(v, 1, 50, match.rules.oversPerInnings);
+        match.rules.oversPerInnings = n; persist();
+        if (!inn.closed && inn.legalBalls >= n * 6) {
+          SC.endInningsManually(match, 'Overs reduced'); persist();
+          if (match.status === 'complete') return go('scorecard', { id: match.id });
+          return inningsEnd();
+        }
+        toast('Overs set to ' + n); render();
+      }, 'e.g. 8');
+    }
+
+    function substituteFlow() {
+      const opts = [];
+      if (inn.striker) opts.push({ id: 'striker', label: pname(inn.striker) + ' (striker)' });
+      if (inn.nonStriker) opts.push({ id: 'nonstriker', label: pname(inn.nonStriker) + ' (non-striker)' });
+      if (!opts.length) { toast('No batter at the crease'); return; }
+      pick('Who is going off?', opts, (end) => {
+        const atCrease = [inn.striker, inn.nonStriker].filter(Boolean);
+        const avail = match.teams[inn.battingTeam].players.map(pl).filter((p) => !atCrease.includes(p.id) && !(inn.batStats[p.id] && inn.batStats[p.id].out));
+        const doSub = (pid) => { SC.substituteBatter(match, end, pid); persist(); toast('Substitute is in'); render(); };
+        pickPlayer('Substitute coming in', avail, doSub, { onAdd: () => addPlayerInMatch(inn.battingTeam, doSub) });
+      });
     }
 
     function moreMenu() {
       const s = sheet('Match options', `<div class="opt-list">
+        <button class="opt" data-act="sub">🔁 Substitute batter (super sub)</button>
+        <button class="opt" data-act="changebowler">🎯 Change current bowler</button>
+        <button class="opt" data-act="overs">📏 Change total overs</button>
         <button class="opt" data-act="endinn">End innings now</button>
         <button class="opt" data-act="retire">Retire striker</button>
         <button class="opt" data-act="rename">Rename teams</button>
@@ -836,7 +878,10 @@
       </div>`);
       $$('.opt', s.overlay).forEach((b) => b.onclick = () => {
         const act = b.dataset.act; s.close();
-        if (act === 'endinn') confirm('End innings?', 'Close the current innings now?', () => { SC.endInningsManually(match, 'Declared'); persist(); if (match.status === 'complete') go('scorecard', { id: match.id }); else inningsEnd(); });
+        if (act === 'sub') substituteFlow();
+        else if (act === 'changebowler') chooseBowler();
+        else if (act === 'overs') changeOvers();
+        else if (act === 'endinn') confirm('End innings?', 'Close the current innings now?', () => { SC.endInningsManually(match, 'Declared'); persist(); if (match.status === 'complete') go('scorecard', { id: match.id }); else inningsEnd(); });
         else if (act === 'retire') retireStriker();
         else if (act === 'rename') renameTeams(match);
         else if (act === 'card') go('scorecard', { id: match.id });
@@ -1138,7 +1183,7 @@
           const b = inn.batStats[pid];
           const sr = b.balls ? (b.runs / b.balls * 100).toFixed(0) : '0';
           return `<tr><td data-pl="${pid}">${esc(pname(pid))}</td>
-            <td class="dim" style="text-align:left">${b.out ? dismissalLine(b) : 'not out'}</td>
+            <td class="dim" style="text-align:left">${b.out ? dismissalLine(b) : (b.retired ? 'retired' : 'not out')}</td>
             <td><b>${b.runs}</b></td><td>${b.balls}</td><td>${b.fours}</td><td>${b.sixes}</td><td>${sr}</td></tr>`;
         }).join('')}
         <tr><td colspan="2" class="dim">Extras (wd ${extras.wide}, nb ${extras.noball}, b ${extras.bye}, lb ${extras.legbye})</td><td colspan="5" style="text-align:left">${exTotal}</td></tr>

@@ -259,6 +259,17 @@
     if (inn.nonStriker === pid) { snapshot(match); swapEnds(inn); }
   }
 
+  /* Super sub: replace the batter at one end with another player (no wicket). */
+  function substituteBatter(match, end, newPid) {
+    const inn = cur(match);
+    if (!newPid) return;
+    snapshot(match);
+    const outId = end === 'striker' ? inn.striker : inn.nonStriker;
+    if (outId && inn.batStats[outId]) inn.batStats[outId].retired = true;
+    ensureBat(inn, newPid, inn.battingOrder ? inn.battingOrder.indexOf(newPid) : undefined);
+    if (end === 'striker') inn.striker = newPid; else inn.nonStriker = newPid;
+  }
+
   function closeInnings(match, reason) {
     const inn = cur(match);
     inn.closed = true; inn.closeReason = reason;
@@ -312,7 +323,7 @@
   }
 
   APP.scoring = {
-    newMatch, startInnings, recordBall, setNewBatsman, setNewBowler, manualSwap, setStriker,
+    newMatch, startInnings, recordBall, setNewBatsman, setNewBowler, manualSwap, setStriker, substituteBatter,
     endInningsManually, computeResult, cur, maxWickets, undo, canUndo,
     oversText, rr, reqRR, teamName, dismissalText, battingTeamFirst,
   };

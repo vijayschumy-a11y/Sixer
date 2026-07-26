@@ -17,6 +17,7 @@
         format: 'box',
         oversPerInnings: 6,
         playersPerSide: 8,
+        maxOversPerBowler: 0, // 0 = no limit
         lastManStanding: true,
         lastManEvenOnly: false,
         reBowlWide: true,
