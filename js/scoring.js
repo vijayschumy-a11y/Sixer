@@ -270,6 +270,20 @@
     if (inn.nonStriker === pid) { snapshot(match); swapEnds(inn); }
   }
 
+  /* Retire a batter: hurt = not out, can return; out = counts as a wicket, done. */
+  function retireBatter(match, end, hurt) {
+    const inn = cur(match);
+    const id = end === 'striker' ? inn.striker : inn.nonStriker;
+    if (!id) return;
+    snapshot(match);
+    const b = ensureBat(inn, id);
+    if (hurt) { b.retired = true; b.out = false; }
+    else { b.out = true; b.how = 'retired'; inn.wickets++; inn.fow.push({ score: inn.runs, wkts: inn.wickets, player: id, over: oversText(inn.legalBalls) }); }
+    const p = curPartnership(inn); if (p) p.out = true;
+    if (end === 'striker') inn.striker = null; else inn.nonStriker = null;
+    if (!hurt && inn.wickets >= maxWickets(match)) closeInnings(match, 'All out');
+  }
+
   /* Super sub: replace the batter at one end with another player (no wicket). */
   function substituteBatter(match, end, newPid) {
     const inn = cur(match);
@@ -335,7 +349,7 @@
   }
 
   APP.scoring = {
-    newMatch, startInnings, recordBall, setNewBatsman, setNewBowler, manualSwap, setStriker, substituteBatter,
+    newMatch, startInnings, recordBall, setNewBatsman, setNewBowler, manualSwap, setStriker, substituteBatter, retireBatter,
     endInningsManually, computeResult, cur, maxWickets, undo, canUndo,
     oversText, rr, reqRR, teamName, dismissalText, battingTeamFirst,
   };

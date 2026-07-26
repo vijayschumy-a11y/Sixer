@@ -74,7 +74,7 @@
       <div class="divider"></div>
       <button class="btn ghost block small" id="h-settings">⚙️ Settings & backup</button>
     `;
-    $('#h-new').onclick = () => go('newmatch');
+    $('#h-new').onclick = () => chooseGameMode();
     $('#h-addp').onclick = () => go('players', { add: true });
     $('#h-watch').onclick = () => {
       if (!SY.available()) return liveSetupNeeded();
@@ -108,6 +108,27 @@
           <span class="badge live">Rejoin ▸</span></div>`).join('')}</div>`;
       slot.querySelectorAll('.rejoin').forEach((el) => el.onclick = () => watchRoom(el.dataset.code));
     }).catch(() => {});
+  }
+
+  // Ask what kind of game before setup: single, one-day session, or tournament
+  function chooseGameMode() {
+    const s = sheet('What are you playing?', `<div class="opt-list">
+      <button class="opt" data-m="quick"><div style="flex:1"><div>🏏 Quick match</div><div class="small muted">A single game</div></div></button>
+      <button class="opt" data-m="day"><div style="flex:1"><div>📅 One-day session</div><div class="small muted">Many matches, same teams, awards of the day</div></div></button>
+      <button class="opt" data-m="cup"><div style="flex:1"><div>🏆 Tournament</div><div class="small muted">League table with NRR, semis & final</div></div></button>
+    </div>`);
+    $$('.opt', s.overlay).forEach((b) => b.onclick = () => {
+      const m = b.dataset.m; s.close();
+      if (m === 'quick') { draft = null; go('newmatch'); }
+      else if (m === 'day') startDaySession();
+      else if (m === 'cup') { competeTab = 'cups'; newTournament(); }
+    });
+  }
+  function startDaySession() {
+    prompt('One-day session', 'Name', 'Session ' + fmtDate(Date.now()), (v) => {
+      const se = S.Sessions.add({ name: v || ('Session ' + fmtDate(Date.now())) });
+      go('session', { id: se.id });
+    });
   }
 
   function liveCardHTML(m) {
@@ -395,6 +416,7 @@
           <label class="field"><span>Elected to</span>
             <select id="ms-dec"><option value="bat" ${draft.toss.decision === 'bat' ? 'selected' : ''}>Bat</option><option value="bowl" ${draft.toss.decision === 'bowl' ? 'selected' : ''}>Bowl</option></select></label>
         </div>
+        <button class="btn sm" id="ms-flip">🎲 Auto flip</button>
       </div>
 
       <div class="card">
@@ -413,7 +435,14 @@
     // bindings
     $$('#screen [data-fmt]').forEach((b) => b.onclick = () => { draft.format = b.dataset.fmt; saveDraftInputs(); render(); });
     $$('#screen [data-tg]').forEach((b) => b.onclick = () => { const k = b.dataset.tg; draft.rules[k] = !draft.rules[k]; saveDraftInputs(); render(); });
-    $('#ms-quick').onclick = () => prompt('Quick add player', 'Name', '', (v) => { if (v) { S.Players.add({ name: v }); saveDraftInputs(); render(); } });
+    $('#ms-quick').onclick = () => newPlayerSheet((name, photo) => { resolvePlayer(name, photo); saveDraftInputs(); render(); });
+    $('#ms-flip').onclick = () => {
+      saveDraftInputs();
+      const w = Math.floor(Math.random() * 2), d = Math.random() < 0.5 ? 'bat' : 'bowl';
+      draft.toss.wonBy = w; draft.toss.decision = d;
+      $('#ms-toss').value = String(w); $('#ms-dec').value = d;
+      toast(`🪙 ${draft.teamNames[w]} won the toss — chose to ${d}`);
+    };
     $$('#ms-pool [data-assign]').forEach((el) => el.onclick = () => {
       const pid = el.dataset.assign;
       const cur = draft.assign[pid];
@@ -516,16 +545,34 @@
   }
 
   // create/reuse a player by name and add them to a match team (used at innings start)
+  // Add-a-player sheet with instant camera/photo capture. cb(name, photo)
+  function newPlayerSheet(cb) {
+    let photo = '';
+    const s = sheet('Add a player', `
+      <div class="center"><div id="np-ava" style="display:inline-block">${avatar(null, 'xl')}</div></div>
+      <button class="btn block" id="np-photo" style="margin-top:10px">📸 Take photo / choose</button>
+      <label class="field"><span>Name</span><input id="np-name" placeholder="Player name"></label>
+      <button class="btn primary block" id="np-ok">Add player</button>`);
+    const nameInp = $('#np-name', s.overlay);
+    setTimeout(() => nameInp.focus(), 50);
+    $('#np-photo', s.overlay).onclick = () => APP.photo.capture((data) => { if (data) { photo = data; $('#np-ava', s.overlay).innerHTML = avatar({ photo }, 'xl'); } });
+    $('#np-ok', s.overlay).onclick = () => { const name = nameInp.value.trim(); if (!name) return toast('Enter a name', 'err'); s.close(); cb(name, photo); };
+  }
+  // resolve a name+photo to a player id (reuse existing by name, else create)
+  function resolvePlayer(name, photo) {
+    const existing = S.Players.all().find((p) => p.name.toLowerCase() === name.toLowerCase());
+    if (existing) { if (photo && !existing.photo) S.Players.update(existing.id, { photo }); return existing.id; }
+    return S.Players.add({ name, photo: photo || '' }).id;
+  }
+
   function addPlayerToMatch(match, teamIdx, then) {
-    prompt('Add a player', 'Player name', '', (name) => {
-      if (!name) return;
-      const existing = S.Players.all().find((p) => p.name.toLowerCase() === name.toLowerCase());
-      const pid = existing ? existing.id : S.Players.add({ name }).id;
+    newPlayerSheet((name, photo) => {
+      const pid = resolvePlayer(name, photo);
       if (!match.teams[teamIdx].players.includes(pid)) match.teams[teamIdx].players.push(pid);
       APP.syncNames = APP.syncNames || {}; APP.syncNames[pid] = name;
       toast(name + ' added');
       then(pid);
-    }, 'e.g. Suresh');
+    });
   }
 
   // opts: boolean (allowNone) for back-compat, or { allowNone, onAdd, sub(p) }
@@ -570,6 +617,24 @@
 
     const ballsLeft = r.oversPerInnings * 6 - inn.legalBalls;
     const thisOver = currentOverBalls(inn);
+    // projected score (1st innings) & rough win chance (2nd innings)
+    const crrNum = inn.legalBalls ? inn.runs / inn.legalBalls * 6 : 0;
+    const projected = (!inn.target && inn.legalBalls > 0) ? Math.round(inn.runs + crrNum * ballsLeft) : null;
+    let winPct = null;
+    if (inn.target && !inn.closed) {
+      if (inn.runs >= inn.target) winPct = 100;
+      else if (ballsLeft <= 0) winPct = 0;
+      else {
+        const need = inn.target - inn.runs;
+        const wktsLeft = SC.maxWickets(match) - inn.wickets;
+        if (wktsLeft <= 0) winPct = 0;
+        else {
+          const rrr = need / ballsLeft * 6;
+          let p = 50 + (8 - rrr) * 7 + (wktsLeft - 2) * 5 - (need / (wktsLeft + 1)) * 0.6;
+          winPct = Math.max(2, Math.min(98, Math.round(p)));
+        }
+      }
+    }
 
     const liveBanner = shared
       ? `<div class="live-banner ${amScorer ? 'me' : ''}">
@@ -622,10 +687,11 @@
         </div>
         <div class="bigscore">${inn.runs}/${inn.wickets} <small>(${SC.oversText(inn.legalBalls)}/${r.oversPerInnings})</small></div>
         <div class="sb-line"><span>CRR ${SC.rr(inn.runs, inn.legalBalls)}</span>
-          <span>Extras ${inn.extras.wide + inn.extras.noball + inn.extras.bye + inn.extras.legbye}</span>
+          ${projected != null ? `<span>Proj <b>${projected}</b></span>` : `<span>Extras ${inn.extras.wide + inn.extras.noball + inn.extras.bye + inn.extras.legbye}</span>`}
           ${inn.lastMan ? `<span class="pill red">LAST MAN</span>` : ''}
         </div>
         ${inn.target ? `<div class="target-banner">Target <b>${inn.target}</b> · need <b>${Math.max(0, inn.target - inn.runs)}</b> off <b>${ballsLeft}</b> · RRR ${SC.reqRR(inn.target, inn.runs, ballsLeft)}</div>` : ''}
+        ${winPct != null ? `<div class="sb-line" style="margin-top:6px"><span>Win chance (est)</span><span><b>${winPct}%</b> ${esc(SC.teamName(match, inn.battingTeam))}</span></div>` : ''}
       </div>
 
       <div class="card" style="margin-top:12px">
@@ -792,17 +858,15 @@
 
     // create/reuse a player by name and add them to a team mid-match, then continue
     function addPlayerInMatch(teamIdx, then) {
-      prompt('Add a player', 'Player name', '', (name) => {
-        if (!name) return;
-        const existing = S.Players.all().find((p) => p.name.toLowerCase() === name.toLowerCase());
-        const pid = existing ? existing.id : S.Players.add({ name }).id;
+      newPlayerSheet((name, photo) => {
+        const pid = resolvePlayer(name, photo);
         if (!match.teams[teamIdx].players.includes(pid)) match.teams[teamIdx].players.push(pid);
         if (teamIdx === inn.battingTeam && inn.battingOrder && !inn.battingOrder.includes(pid)) inn.battingOrder.push(pid);
         APP.syncNames = APP.syncNames || {}; APP.syncNames[pid] = name; // so viewers see it immediately
         persist();
         toast(name + ' added');
         then(pid);
-      }, 'e.g. Suresh');
+      });
     }
 
     function chooseBatsman() {
@@ -887,7 +951,7 @@
         <button class="opt" data-act="changebowler">🤕 Bowler injured / change bowler</button>
         <button class="opt" data-act="overs">📏 Change total overs</button>
         <button class="opt" data-act="endinn">End innings now</button>
-        <button class="opt" data-act="retire">Retire striker</button>
+        <button class="opt" data-act="retire">🚪 Retire batter (hurt / out)</button>
         <button class="opt" data-act="rename">Rename teams</button>
         <button class="opt" data-act="card">Full scorecard</button>
         <button class="opt" data-act="abandon" style="color:var(--red)">Abandon / delete match</button>
@@ -898,14 +962,29 @@
         else if (act === 'changebowler') chooseBowler();
         else if (act === 'overs') changeOvers();
         else if (act === 'endinn') confirm('End innings?', 'Close the current innings now?', () => { SC.endInningsManually(match, 'Declared'); persist(); if (match.status === 'complete') go('scorecard', { id: match.id }); else inningsEnd(); });
-        else if (act === 'retire') retireStriker();
+        else if (act === 'retire') retireFlow();
         else if (act === 'rename') renameTeams(match);
         else if (act === 'card') go('scorecard', { id: match.id });
         else if (act === 'abandon') confirm('Delete match?', 'This removes the match permanently.', () => { S.Matches.remove(match.id); go('home'); }, 'Delete', true);
       });
     }
-    function retireStriker() {
-      ball({ runs: 0, wicket: { type: 'retired', who: 'striker', fielder: null } });
+    function retireFlow() {
+      const opts = [];
+      if (inn.striker) opts.push({ id: 'striker', label: pname(inn.striker) + ' (striker)' });
+      if (inn.nonStriker) opts.push({ id: 'nonstriker', label: pname(inn.nonStriker) + ' (non-striker)' });
+      if (!opts.length) { toast('No batter at the crease'); return; }
+      pick('Retire which batter?', opts, (end) => {
+        const s = sheet('Retire batter', `<div class="opt-list">
+          <button class="opt" data-h="hurt">🤕 Retired hurt — can return later</button>
+          <button class="opt" data-h="out">🚪 Retired out — done for the match</button></div>`);
+        $$('.opt', s.overlay).forEach((b) => b.onclick = () => {
+          const hurt = b.dataset.h === 'hurt'; s.close();
+          SC.retireBatter(match, end, hurt); persist();
+          toast(hurt ? 'Retired hurt' : 'Retired out');
+          if (inn.closed) return inningsEnd();
+          chooseBatsman();
+        });
+      });
     }
   }
 
@@ -1172,6 +1251,7 @@
       </div>` : ''}
 
       ${match.innings.map((inn, i) => inningsCard(match, inn, i)).join('')}
+      ${hasBalls ? awardCard(match.status === 'complete' ? '🏅 Match awards' : '🏅 Match awards (so far)', ST.awards([match], { minBowlBalls: 1 }), 'Man of the match') : ''}
       ${match.status === 'live' ? `<button class="btn primary block" id="card-resume" style="margin-top:12px">▸ Resume scoring</button>` : ''}
       <button class="btn ghost block small" id="card-del" style="margin-top:12px">Delete match</button>
     `;
@@ -1521,7 +1601,8 @@
         <button class="chip sel" data-d="bat">🏏 Bat</button>
         <button class="chip" data-d="bowl">🎯 Bowl</button>
       </div>
-      <button class="btn primary block" id="ts-ok" style="margin-top:14px">Start match ▸</button>`);
+      <button class="btn block" id="ts-flip" style="margin-top:12px">🎲 Auto flip</button>
+      <button class="btn primary block" id="ts-ok" style="margin-top:8px">Start match ▸</button>`);
     let wonBy = 0, decision = 'bat';
     const wire = (sel, key, cb) => $$(sel + ' .chip', s.overlay).forEach((b) => b.onclick = () => {
       $$(sel + ' .chip', s.overlay).forEach((x) => x.classList.remove('sel'));
@@ -1529,6 +1610,7 @@
     });
     wire('#ts-who', 'w', (v) => wonBy = parseInt(v, 10));
     wire('#ts-dec', 'd', (v) => decision = v);
+    $('#ts-flip', s.overlay).onclick = () => { const r = flipToss(s.overlay, teamA.name, teamB.name); wonBy = r.wonBy; decision = r.decision; };
     $('#ts-ok', s.overlay).onclick = () => {
       s.close();
       const match = SC.newMatch({
@@ -1570,6 +1652,16 @@
       </div></div>`;
   }
 
+  // Randomise a chip-based toss sheet (#ts-who / #ts-dec); returns {wonBy, decision}
+  function flipToss(overlay, aName, bName) {
+    const wonBy = Math.floor(Math.random() * 2);
+    const decision = Math.random() < 0.5 ? 'bat' : 'bowl';
+    $$('#ts-who .chip', overlay).forEach((x) => x.classList.toggle('sel', parseInt(x.dataset.w, 10) === wonBy));
+    $$('#ts-dec .chip', overlay).forEach((x) => x.classList.toggle('sel', x.dataset.d === decision));
+    toast(`🪙 ${wonBy === 0 ? aName : bName} won the toss — chose to ${decision}`);
+    return { wonBy, decision };
+  }
+
   // Start another match reusing the two teams from the last match in a session
   function tossThenStart(teamA, teamB, rules, format, sessionId) {
     const s = sheet('Toss', `
@@ -1583,13 +1675,15 @@
         <button class="chip sel" data-d="bat">🏏 Bat</button>
         <button class="chip" data-d="bowl">🎯 Bowl</button>
       </div>
-      <button class="btn primary block" id="ts-ok" style="margin-top:14px">Start match ▸</button>`);
+      <button class="btn block" id="ts-flip" style="margin-top:12px">🎲 Auto flip</button>
+      <button class="btn primary block" id="ts-ok" style="margin-top:8px">Start match ▸</button>`);
     let wonBy = 0, decision = 'bat';
     const wire = (sel, key, cb) => $$(sel + ' .chip', s.overlay).forEach((b) => b.onclick = () => {
       $$(sel + ' .chip', s.overlay).forEach((x) => x.classList.remove('sel')); b.classList.add('sel'); cb(b.dataset[key]);
     });
     wire('#ts-who', 'w', (v) => wonBy = parseInt(v, 10));
     wire('#ts-dec', 'd', (v) => decision = v);
+    $('#ts-flip', s.overlay).onclick = () => { const r = flipToss(s.overlay, teamA.name, teamB.name); wonBy = r.wonBy; decision = r.decision; };
     $('#ts-ok', s.overlay).onclick = () => {
       s.close();
       const match = SC.newMatch({ sessionId, format: format || 'box', rules: Object.assign({}, rules), teams: [teamA, teamB], toss: { wonBy, decision } });
@@ -1735,7 +1829,7 @@
     };
   };
 
-  $$('#bottomnav button').forEach((b) => b.onclick = () => { if (b.dataset.route === 'newmatch') draft = null; go(b.dataset.route); });
+  $$('#bottomnav button').forEach((b) => b.onclick = () => { if (b.dataset.route === 'newmatch') { draft = null; return chooseGameMode(); } go(b.dataset.route); });
   $('#brand-name').textContent = BRAND;
 
   // deep link: ?watch=CODE opens straight into a live match
