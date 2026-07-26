@@ -485,7 +485,7 @@
       toss: Object.assign({}, draft.toss),
     };
     const match = SC.newMatch(cfg);
-    S.Matches.save(match);
+    // don't persist until the first innings actually starts (avoids orphaned "setup" matches)
     draft = null;
     openInningsFlow(match);
   }
@@ -524,6 +524,8 @@
     const match = S.Matches.get(params.id);
     if (!match) return go('home');
     if (match.status === 'complete') return go('scorecard', { id: match.id });
+    // match created but no innings started yet (e.g. openers weren't picked) — resume that step
+    if (match.currentInnings < 0 || !match.innings[match.currentInnings]) return openInningsFlow(match);
     const inn = SC.cur(match);
     const r = match.rules;
 

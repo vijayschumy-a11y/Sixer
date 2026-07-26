@@ -160,7 +160,8 @@
       return match;
     },
     remove(id) { delete remoteReg[id]; db.matches = db.matches.filter((m) => m.id !== id); persist(); },
-    live: () => db.matches.filter((m) => m.status === 'live').sort((a, b) => b.date - a.date),
+    // only matches that have actually started an innings (ignore abandoned setups)
+    live: () => db.matches.filter((m) => m.status === 'live' && Array.isArray(m.innings) && m.innings.length > 0).sort((a, b) => b.date - a.date),
   };
 
   /* ---------- Recent live rooms (for one-tap rejoin) ---------- */
