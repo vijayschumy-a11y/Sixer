@@ -242,6 +242,7 @@
     const inn = cur(match);
     snapshot(match);
     ensureBat(inn, pid, inn.battingOrder.indexOf(pid));
+    inn.batStats[pid].retired = false; // a retired sub can be brought back, resuming their score
     if (inn.striker == null) inn.striker = pid; else inn.nonStriker = pid;
   }
   function setNewBowler(match, pid) {
@@ -267,6 +268,7 @@
     const outId = end === 'striker' ? inn.striker : inn.nonStriker;
     if (outId && inn.batStats[outId]) inn.batStats[outId].retired = true;
     ensureBat(inn, newPid, inn.battingOrder ? inn.battingOrder.indexOf(newPid) : undefined);
+    inn.batStats[newPid].retired = false; // incoming may be a previously-retired player returning
     if (end === 'striker') inn.striker = newPid; else inn.nonStriker = newPid;
   }
 

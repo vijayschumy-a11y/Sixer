@@ -819,7 +819,17 @@
           });
         } else { pendingStrikeAsk = false; finish(); }
       };
-      pickPlayer('New batter in', avail, onSelect, { onAdd: () => addPlayerInMatch(inn.battingTeam, onSelect) });
+      pickPlayer('New batter in', avail, onSelect, {
+        onAdd: () => addPlayerInMatch(inn.battingTeam, onSelect),
+        sub: retiredSub,
+      });
+    }
+
+    // subtitle for pickers: mark a previously-retired player who would resume their score
+    function retiredSub(p) {
+      const b = inn.batStats[p.id];
+      if (b && b.retired) return `↩ was retired · resumes on ${b.runs} (${b.balls})`;
+      return ROLE_LABEL[p.role] || '';
     }
 
     function chooseBowler() {
@@ -861,7 +871,7 @@
         const atCrease = [inn.striker, inn.nonStriker].filter(Boolean);
         const avail = match.teams[inn.battingTeam].players.map(pl).filter((p) => !atCrease.includes(p.id) && !(inn.batStats[p.id] && inn.batStats[p.id].out));
         const doSub = (pid) => { SC.substituteBatter(match, end, pid); persist(); toast('Substitute is in'); render(); };
-        pickPlayer('Substitute coming in', avail, doSub, { onAdd: () => addPlayerInMatch(inn.battingTeam, doSub) });
+        pickPlayer('Substitute coming in', avail, doSub, { onAdd: () => addPlayerInMatch(inn.battingTeam, doSub), sub: retiredSub });
       });
     }
 
