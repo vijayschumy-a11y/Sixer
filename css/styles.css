@@ -15,6 +15,7 @@
   --radius:16px;
   --shadow:0 8px 30px rgba(0,0,0,.4);
   --safe-b: env(safe-area-inset-bottom, 0px);
+  --safe-t: env(safe-area-inset-top, 0px);
 }
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{margin:0;padding:0;height:100%}
@@ -32,7 +33,7 @@ a{color:var(--green)}
 
 /* Topbar */
 #topbar{position:sticky;top:0;z-index:30;display:flex;align-items:center;justify-content:space-between;
-  padding:14px 16px;background:linear-gradient(180deg, rgba(10,15,13,.96), rgba(10,15,13,.78));
+  padding:calc(12px + var(--safe-t)) 16px 12px;background:linear-gradient(180deg, rgba(10,15,13,.98), rgba(10,15,13,.82));
   backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
 .brand{display:flex;align-items:center;gap:10px}
 .brand h1{font-size:20px;letter-spacing:.5px}
