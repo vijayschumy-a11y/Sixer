@@ -181,10 +181,10 @@
       </div>
       <p class="muted small">Save a team once, then just pick it when starting a match or tournament.</p>
       <div class="plist" style="margin-top:10px">
-        ${teams.length ? teams.map((t) => `<div class="prow" data-tm="${t.id}">
+        ${teams.length ? teams.map((t) => `<div class="prow" data-tm="${t.id}" style="align-items:flex-start">
             <div class="avatar">${esc(initialsOf(t.name))}</div>
-            <div class="meta"><div class="nm">${esc(t.name)}</div>
-              <div class="sub">${t.players.length} player${t.players.length !== 1 ? 's' : ''}</div></div>
+            <div class="meta"><div class="nm">${esc(t.name)} <span class="muted small">· ${t.players.length}</span></div>
+              <div class="sub">${t.players.length ? t.players.map((id) => esc(pname(id))).join(', ') : 'No players yet'}</div></div>
             <span class="muted">›</span></div>`).join('')
           : `<div class="empty"><div class="big">🛡️</div>No teams yet. Create one to run a tournament.</div>`}
       </div>`;
@@ -833,6 +833,20 @@
     } else start();
   }
 
+  // "Team: Player1, Player2, …" for a match side
+  function teamLineup(match, idx) {
+    const t = match.teams[idx];
+    const names = (t.players || []).map((id) => pname(id)).join(', ');
+    return `${SC.teamName(match, idx)}: ${names || '—'}`;
+  }
+  function whatsapp(text) { window.open('https://wa.me/?text=' + encodeURIComponent(text), '_blank'); }
+
+  function liveShareText(match, link) {
+    return `🏏 *${SC.teamName(match, 0)}* vs *${SC.teamName(match, 1)}*\n`
+      + `LIVE now — tap to watch on Sixer:\n${link}\n\n`
+      + `${teamLineup(match, 0)}\n${teamLineup(match, 1)}`;
+  }
+
   function shareLiveSheet(match) {
     const code = match.roomCode;
     const link = location.origin + location.pathname + '?watch=' + code;
@@ -841,15 +855,17 @@
         <div class="small muted">Anyone with this link can watch live — and tap “I'm scoring now” to take over.</div>
         <div style="font-size:36px;font-weight:900;letter-spacing:8px;margin:12px 0;color:var(--accent)">${code}</div>
       </div>
-      <input id="sh-link" value="${esc(link)}" readonly>
-      <div class="cap-grid" style="margin-top:10px">
-        <button class="btn primary" id="sh-share">Share link</button>
+      <button class="btn wa block" id="sh-wa">📲 Share on WhatsApp</button>
+      <input id="sh-link" value="${esc(link)}" readonly style="margin-top:10px">
+      <div class="cap-grid" style="margin-top:8px">
+        <button class="btn" id="sh-share">More…</button>
         <button class="btn" id="sh-copy">Copy link</button>
       </div>`);
     $('#sh-link', s.overlay).onclick = (e) => e.target.select();
+    $('#sh-wa', s.overlay).onclick = () => whatsapp(liveShareText(match, link));
     $('#sh-copy', s.overlay).onclick = () => { try { navigator.clipboard.writeText(link); } catch (e) {} toast('Link copied'); };
     $('#sh-share', s.overlay).onclick = () => {
-      if (navigator.share) navigator.share({ title: SC.teamName(match, 0) + ' vs ' + SC.teamName(match, 1), text: 'Watch live on Sixer', url: link }).catch(() => {});
+      if (navigator.share) navigator.share({ title: SC.teamName(match, 0) + ' vs ' + SC.teamName(match, 1), text: liveShareText(match, link) }).catch(() => {});
       else { try { navigator.clipboard.writeText(link); } catch (e) {} toast('Link copied'); }
     };
   }
@@ -1122,7 +1138,8 @@
 
   function shareMenu(match) {
     const s = sheet('Share scorecard', `<div class="opt-list">
-      <button class="opt" data-a="img">🖼️ Share image (WhatsApp etc.)</button>
+      <button class="opt" data-a="wa">📲 Share on WhatsApp</button>
+      <button class="opt" data-a="img">🖼️ Share image (PNG)</button>
       <button class="opt" data-a="imgdl">⬇️ Save image (PNG)</button>
       <button class="opt" data-a="text">📋 Share / copy as text</button>
     </div>
@@ -1134,7 +1151,8 @@
     } catch (e) {}
     $$('.opt', s.overlay).forEach((b) => b.onclick = () => {
       const a = b.dataset.a; s.close();
-      if (a === 'text') shareCard(match);
+      if (a === 'wa') whatsapp(scorecardText(match));
+      else if (a === 'text') shareCard(match);
       else exportScorecardImage(match, a === 'img');
     });
   }
@@ -1168,14 +1186,23 @@
     img.src = url;
   }
 
-  function shareCard(match) {
+  function scorecardText(match) {
     const lines = [];
-    lines.push(`${SC.teamName(match, 0)} vs ${SC.teamName(match, 1)} — ${BRAND}`);
+    lines.push(`🏏 *${SC.teamName(match, 0)}* vs *${SC.teamName(match, 1)}*`);
     match.innings.forEach((inn) => lines.push(`${SC.teamName(match, inn.battingTeam)}: ${inn.runs}/${inn.wickets} (${SC.oversText(inn.legalBalls)} ov)`));
     lines.push(match.result || 'In progress');
     const potm = ST.playerOfMatch(match);
     if (potm && match.status === 'complete') lines.push(`⭐ Player of the Match: ${pname(potm.pid)} (${potm.line})`);
-    const text = lines.join('\n');
+    lines.push('');
+    lines.push(teamLineup(match, 0));
+    lines.push(teamLineup(match, 1));
+    if (match.roomCode && match.status !== 'complete') lines.push(`\nWatch live: ${location.origin + location.pathname}?watch=${match.roomCode}`);
+    lines.push('— via Sixer');
+    return lines.join('\n');
+  }
+
+  function shareCard(match) {
+    const text = scorecardText(match);
     if (navigator.share) navigator.share({ title: BRAND, text }).catch(() => {});
     else { navigator.clipboard && navigator.clipboard.writeText(text); toast('Scorecard copied'); }
   }
