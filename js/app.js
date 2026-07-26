@@ -493,10 +493,12 @@
   /* Pick openers/bowler then start the innings. */
   function openInningsFlow(match) {
     const battingTeam = match.innings.length === 0 ? SC.battingTeamFirst(match) : (match.innings[0].battingTeam === 0 ? 1 : 0);
+    const bowlingTeam = battingTeam === 0 ? 1 : 0;
     const batPlayers = match.teams[battingTeam].players.map(pl);
-    const bowlPlayers = match.teams[battingTeam === 0 ? 1 : 0].players.map(pl);
+    const bowlPlayers = match.teams[bowlingTeam].players.map(pl);
     const single = match.rules.singleBatsman;
     let striker = null, nonStriker = null;
+    const restart = () => openInningsFlow(match); // re-open with the new player in the list
 
     pickPlayer('Select striker 🏏', batPlayers, (sid) => {
       striker = sid;
@@ -504,14 +506,32 @@
         SC.startInnings(match, { battingTeam, order: match.teams[battingTeam].players.slice(), striker, nonStriker, bowler: bid });
         S.Matches.save(match);
         go('live', { id: match.id });
-      });
+      }, { onAdd: () => addPlayerToMatch(match, bowlingTeam, restart) });
       if (single) next();
-      else pickPlayer('Select non-striker', batPlayers.filter((p) => p.id !== striker), (nid) => { nonStriker = nid; next(); });
-    });
+      else pickPlayer('Select non-striker', batPlayers.filter((p) => p.id !== striker), (nid) => { nonStriker = nid; next(); }, { onAdd: () => addPlayerToMatch(match, battingTeam, restart) });
+    }, { onAdd: () => addPlayerToMatch(match, battingTeam, restart) });
   }
 
-  function pickPlayer(title, players, cb, allowNone) {
-    pick(title, players.map((p) => ({ id: p.id, html: playerOptHTML(p) })), cb, { allowNone });
+  // create/reuse a player by name and add them to a match team (used at innings start)
+  function addPlayerToMatch(match, teamIdx, then) {
+    prompt('Add a player', 'Player name', '', (name) => {
+      if (!name) return;
+      const existing = S.Players.all().find((p) => p.name.toLowerCase() === name.toLowerCase());
+      const pid = existing ? existing.id : S.Players.add({ name }).id;
+      if (!match.teams[teamIdx].players.includes(pid)) match.teams[teamIdx].players.push(pid);
+      APP.syncNames = APP.syncNames || {}; APP.syncNames[pid] = name;
+      toast(name + ' added');
+      then(pid);
+    }, 'e.g. Suresh');
+  }
+
+  // opts: boolean (allowNone) for back-compat, or { allowNone, onAdd }
+  function pickPlayer(title, players, cb, opts) {
+    if (typeof opts === 'boolean') opts = { allowNone: opts };
+    opts = opts || {};
+    const items = players.map((p) => ({ id: p.id, html: playerOptHTML(p) }));
+    if (opts.onAdd) items.push({ id: '__add__', html: '<div style="flex:1;color:var(--green)">➕ Add a new player…</div>' });
+    pick(title, items, (id) => { if (id === '__add__') return opts.onAdd(); cb(id); }, { allowNone: opts.allowNone });
   }
   function playerOptHTML(p) {
     return `${avatar(p)}<div style="flex:1"><div>${esc(p.name)}</div><div class="small muted">${ROLE_LABEL[p.role] || ''}</div></div>`;
@@ -765,12 +785,26 @@
       };
     }
 
+    // create/reuse a player by name and add them to a team mid-match, then continue
+    function addPlayerInMatch(teamIdx, then) {
+      prompt('Add a player', 'Player name', '', (name) => {
+        if (!name) return;
+        const existing = S.Players.all().find((p) => p.name.toLowerCase() === name.toLowerCase());
+        const pid = existing ? existing.id : S.Players.add({ name }).id;
+        if (!match.teams[teamIdx].players.includes(pid)) match.teams[teamIdx].players.push(pid);
+        if (teamIdx === inn.battingTeam && inn.battingOrder && !inn.battingOrder.includes(pid)) inn.battingOrder.push(pid);
+        APP.syncNames = APP.syncNames || {}; APP.syncNames[pid] = name; // so viewers see it immediately
+        persist();
+        toast(name + ' added');
+        then(pid);
+      }, 'e.g. Suresh');
+    }
+
     function chooseBatsman() {
       const batTeam = match.teams[inn.battingTeam].players;
       const atCrease = [inn.striker, inn.nonStriker].filter(Boolean);
       const avail = batTeam.map(pl).filter((p) => !atCrease.includes(p.id) && !(inn.batStats[p.id] && inn.batStats[p.id].out));
-      if (!avail.length) { toast('No batters left'); return; }
-      pickPlayer('New batter in', avail, (pid) => {
+      const onSelect = (pid) => {
         SC.setNewBatsman(match, pid); persist();
         const finish = () => { if (!inn.bowler) chooseBowler(); else render(); };
         // after a run out the batters may have crossed — let the scorer set the ends
@@ -780,16 +814,16 @@
             SC.setStriker(match, sid); persist(); finish();
           });
         } else { pendingStrikeAsk = false; finish(); }
-      });
+      };
+      pickPlayer('New batter in', avail, onSelect, { onAdd: () => addPlayerInMatch(inn.battingTeam, onSelect) });
     }
 
     function chooseBowler() {
       const bowlTeam = match.teams[inn.bowlingTeam].players;
       let avail = bowlTeam.map(pl);
       if (inn.prevBowler && avail.length > 1) avail = avail.filter((p) => p.id !== inn.prevBowler);
-      pickPlayer('Bowler for this over', avail, (pid) => {
-        SC.setNewBowler(match, pid); persist(); render();
-      });
+      const onSelect = (pid) => { SC.setNewBowler(match, pid); persist(); render(); };
+      pickPlayer('Bowler for this over', avail, onSelect, { onAdd: () => addPlayerInMatch(inn.bowlingTeam, onSelect) });
     }
 
     function moreMenu() {
