@@ -153,5 +153,46 @@
     return rows;
   }
 
-  APP.stats = { career, fmt, leaderboard, blankCareer, playerOfMatch, standings };
+  /* ---------- Awards over a set of matches (a day/session or a tournament) ---------- */
+  function battingImpact(c) {
+    let p = c.runs + c.fours + c.sixes * 2 + c.hundreds * 50 + c.fifties * 25 + c.thirties * 10;
+    if (c.balls >= 6) p += (c.runs / c.balls * 100) / 10; // strike-rate sweetener
+    return p;
+  }
+  function bowlingImpact(c) {
+    let p = c.wkts * 22 + c.maidens * 6;
+    if (c.bBalls > 0) { const econ = c.bRuns / c.bBalls * 6; p += Math.max(-6, (7 - econ) * (c.bBalls / 6)); }
+    return p;
+  }
+  function fielding(c) { return c.catches + c.runouts + c.stumpings; }
+  function overallImpact(c) { return battingImpact(c) + bowlingImpact(c) + (c.catches * 8 + c.runouts * 10 + c.stumpings * 10); }
+
+  function awards(matches, opts) {
+    opts = opts || {};
+    const minBowlBalls = opts.minBowlBalls || 6; // min 1 over to qualify for economy
+    const rows = leaderboard(matches).map((r) => Object.assign(r, {
+      impact: overallImpact(r.c), batImp: battingImpact(r.c), bowlImp: bowlingImpact(r.c), field: fielding(r.c),
+    }));
+    if (!rows.length) return null;
+    const best = (score, filter) => {
+      const pool = filter ? rows.filter(filter) : rows;
+      return pool.length ? pool.reduce((a, b) => (score(b) > score(a) ? b : a)) : null;
+    };
+    const least = (score, filter) => {
+      const pool = filter ? rows.filter(filter) : rows;
+      return pool.length ? pool.reduce((a, b) => (score(b) < score(a) ? b : a)) : null;
+    };
+    return {
+      potd: best((r) => r.impact),
+      bestBatter: best((r) => r.batImp, (r) => r.c.balls > 0),
+      bestBowler: best((r) => r.bowlImp, (r) => r.c.bBalls > 0),
+      bestFielder: best((r) => r.field, (r) => r.field > 0),
+      bestAllrounder: best((r) => r.batImp + r.bowlImp, (r) => r.c.balls > 0 && r.c.bBalls > 0),
+      orangeCap: best((r) => r.c.runs, (r) => r.c.runs > 0),
+      purpleCap: best((r) => r.c.wkts, (r) => r.c.wkts > 0),
+      bestEcon: least((r) => r.c.bRuns / r.c.bBalls, (r) => r.c.bBalls >= minBowlBalls),
+    };
+  }
+
+  APP.stats = { career, fmt, leaderboard, blankCareer, playerOfMatch, standings, awards, overallImpact };
 })();

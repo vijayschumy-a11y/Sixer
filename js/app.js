@@ -1489,6 +1489,8 @@
         ${t.format === 'league_playoffs' && rows.length >= 4 ? '<div class="small muted" style="margin-top:6px">• Top 4 qualify for the semi-finals</div>' : ''}
       </div>
 
+      ${awardCard('🏅 Tournament awards', ST.awards(S.Tournaments.matches(t.id)), 'Player of the tournament')}
+
       ${grouped.map((r) => `<div class="card"><h4>${TR.ROUND_LABEL[r]}</h4>
         <div style="margin-top:8px">${t.fixtures.filter((f) => f.round === r).map(fixtureRow).join('')}</div></div>`).join('')}
     `;
@@ -1543,14 +1545,72 @@
     };
   }
 
+  // Awards card for a set of matches (day/session or tournament)
+  function awardCard(title, aw, mvpLabel) {
+    if (!aw) return '';
+    mvpLabel = mvpLabel || 'Player of the day';
+    const row = (emoji, label, r, line) => r ? `<div class="award">
+        <span class="aw-emoji">${emoji}</span>
+        <div class="aw-meta"><div class="aw-label">${esc(label)}</div>
+          <div class="aw-name" data-pl="${r.player.id}">${esc(r.player.name)}</div>
+          <div class="small muted">${line(r)}</div></div></div>` : '';
+    return `<div class="card"><h4>${esc(title)}</h4>
+      <div class="awards">
+        ${row('🏆', mvpLabel, aw.potd, (r) => `${r.c.runs} runs · ${r.c.wkts} wkts · impact ${Math.round(r.impact)}`)}
+        ${row('🟠', 'Orange Cap · runs', aw.orangeCap, (r) => `${r.c.runs} runs`)}
+        ${row('🟣', 'Purple Cap · wickets', aw.purpleCap, (r) => `${r.c.wkts} wkts`)}
+        ${row('🥇', 'Best batter', aw.bestBatter, (r) => `${r.c.runs} (${r.c.balls}) · SR ${r.f.sr}`)}
+        ${row('🎯', 'Best bowler', aw.bestBowler, (r) => `${r.c.wkts} wkts · econ ${r.f.econ}`)}
+        ${row('🌟', 'Best all-rounder', aw.bestAllrounder, (r) => `${r.c.runs} runs · ${r.c.wkts} wkts`)}
+        ${row('🧤', 'Best fielder', aw.bestFielder, (r) => `${r.field} dismissal${r.field !== 1 ? 's' : ''}`)}
+        ${row('💚', 'Best economy', aw.bestEcon, (r) => `econ ${r.f.econ} · ${r.f.overs} ov`)}
+      </div></div>`;
+  }
+
+  // Start another match reusing the two teams from the last match in a session
+  function tossThenStart(teamA, teamB, rules, format, sessionId) {
+    const s = sheet('Toss', `
+      <div class="small muted" style="margin-bottom:7px">Who won the toss?</div>
+      <div class="chips" id="ts-who">
+        <button class="chip sel" data-w="0">${esc(teamA.name)}</button>
+        <button class="chip" data-w="1">${esc(teamB.name)}</button>
+      </div>
+      <div class="small muted" style="margin:14px 0 7px">Elected to</div>
+      <div class="chips" id="ts-dec">
+        <button class="chip sel" data-d="bat">🏏 Bat</button>
+        <button class="chip" data-d="bowl">🎯 Bowl</button>
+      </div>
+      <button class="btn primary block" id="ts-ok" style="margin-top:14px">Start match ▸</button>`);
+    let wonBy = 0, decision = 'bat';
+    const wire = (sel, key, cb) => $$(sel + ' .chip', s.overlay).forEach((b) => b.onclick = () => {
+      $$(sel + ' .chip', s.overlay).forEach((x) => x.classList.remove('sel')); b.classList.add('sel'); cb(b.dataset[key]);
+    });
+    wire('#ts-who', 'w', (v) => wonBy = parseInt(v, 10));
+    wire('#ts-dec', 'd', (v) => decision = v);
+    $('#ts-ok', s.overlay).onclick = () => {
+      s.close();
+      const match = SC.newMatch({ sessionId, format: format || 'box', rules: Object.assign({}, rules), teams: [teamA, teamB], toss: { wonBy, decision } });
+      openInningsFlow(match);
+    };
+  }
+  function playAgainSameTeams(se) {
+    const ms = S.Sessions.matches(se.id).sort((a, b) => b.date - a.date);
+    const last = ms.find((m) => m.teams && m.teams.length === 2);
+    if (!last) { draft = null; go('newmatch'); setTimeout(() => { if (draft) draft.sessionId = se.id; }, 0); return; }
+    const A = last.teams[0], B = last.teams[1];
+    tossThenStart(
+      { name: A.name, players: A.players.slice(), teamId: A.teamId },
+      { name: B.name, players: B.players.slice(), teamId: B.teamId },
+      last.rules, last.format, se.id);
+  }
+
   function sessionScreen(screen, params, actions) {
     const se = S.Sessions.get(params.id);
     if (!se) return go('sessions');
     const ms = S.Sessions.matches(se.id).sort((a, b) => b.date - a.date);
-    actions.innerHTML = `<button class="btn sm" id="ss-play">🏏 Play</button>`;
-    // session-scoped leaderboard + points table
-    const rows = ST.leaderboard(ms).sort((a, b) => b.c.runs - a.c.runs).slice(0, 5);
+    actions.innerHTML = `<button class="btn sm" id="ss-play">＋ New</button>`;
     const table = ST.standings(ms);
+    const hasPrev = ms.some((m) => m.teams && m.teams.length === 2);
     screen.innerHTML = `
       <div class="screen-title"><h2>${esc(se.name)}</h2></div>
       <div class="muted small">${fmtDate(se.date)} · ${ms.length} matches</div>
@@ -1568,17 +1628,17 @@
         <div class="small muted" style="margin-top:6px">2 pts win · 1 tie · NRR = run rate for − against (all-out counts full overs)</div>
       </div>` : ''}
 
+      <button class="btn primary block" id="ss-again" style="margin-top:12px;padding:15px">${hasPrev ? '🔁 Play again — same teams' : '🏏 Start first match'}</button>
       <div class="card" style="margin-top:12px">
         <h4>Matches</h4>
-        ${ms.length ? ms.map(matchListItem).join('') : `<div class="muted small" style="margin-top:8px">No matches in this session yet.</div>`}
+        ${ms.length ? ms.map(matchListItem).join('') : `<div class="muted small" style="margin-top:8px">No matches yet — tap the button above to start.</div>`}
       </div>
-      ${rows.length ? `<div class="card"><h4>Top run-scorers</h4>
-        <table class="sc-table" style="margin-top:8px"><tr><th style="text-align:left">Player</th><th>R</th><th>W</th></tr>
-        ${rows.map((r) => `<tr><td style="text-align:left" data-pl="${r.player.id}">${esc(r.player.name)}</td><td>${r.c.runs}</td><td>${r.c.wkts}</td></tr>`).join('')}
-        </table></div>` : ''}
+      ${awardCard('🏅 Awards of the day', ST.awards(ms))}
       <button class="btn ghost block small" id="ss-del" style="margin-top:12px">Delete session</button>
     `;
-    $('#ss-play').onclick = () => { draft = null; go('newmatch'); setTimeout(() => { if (draft) draft.sessionId = se.id; }, 0); };
+    const newMatchHere = () => { draft = null; go('newmatch'); setTimeout(() => { if (draft) draft.sessionId = se.id; }, 0); };
+    $('#ss-play').onclick = newMatchHere;
+    $('#ss-again').onclick = () => hasPrev ? playAgainSameTeams(se) : newMatchHere();
     $('#ss-del').onclick = () => confirm('Delete session?', 'This also removes its matches.', () => { S.Sessions.remove(se.id); go('sessions'); }, 'Delete', true);
     $$('#screen [data-match]').forEach((e) => e.onclick = () => { const m = S.Matches.get(e.dataset.match); go(m.status === 'live' ? 'live' : 'scorecard', { id: m.id }); });
     $$('#screen [data-pl]').forEach((e) => e.onclick = () => go('player', { id: e.dataset.pl }));
