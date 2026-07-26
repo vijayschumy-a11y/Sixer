@@ -31,10 +31,15 @@
       striker: null, nonStriker: null, bowler: null, prevBowler: null,
       lastMan: false, freeHit: false,
       curOverBowlerRuns: 0, curOverBowlerBalls: 0,
-      fow: [], timeline: [],
+      fow: [], timeline: [], partnerships: [],
       target: null, closed: false, closeReason: '',
     };
   }
+
+  function openPartnership(inn) {
+    if (inn.striker && inn.nonStriker) inn.partnerships.push({ a: inn.striker, b: inn.nonStriker, runs: 0, balls: 0, out: false });
+  }
+  function curPartnership(inn) { return inn.partnerships[inn.partnerships.length - 1]; }
 
   function ensureBat(inn, pid, order) {
     if (!inn.batStats[pid]) inn.batStats[pid] = { runs: 0, balls: 0, fours: 0, sixes: 0, out: false, how: '', bowler: '', fielder: '', order: order != null ? order : Object.keys(inn.batStats).length };
@@ -56,6 +61,7 @@
     ensureBat(inn, striker, 0);
     if (inn.nonStriker) ensureBat(inn, nonStriker, 1);
     ensureBowl(inn, bowler);
+    openPartnership(inn);
     match.innings.push(inn);
     match.currentInnings = match.innings.length - 1;
     return inn;
@@ -145,6 +151,8 @@
 
     if (facedBall) bs.balls++;
     inn.runs += teamRuns;
+    const pShip = curPartnership(inn);
+    if (pShip && !pShip.out) { pShip.runs += teamRuns; if (legal) pShip.balls++; }
 
     // bowler accounting
     bw.runsConceded += bowlerCharged;
@@ -166,6 +174,7 @@
       const credited = !['runout', 'retired'].includes(wkt.type);
       if (credited) { ob.bowler = bowlerId; bw.wickets++; }
       inn.wickets++;
+      if (pShip && !pShip.out) pShip.out = true; // partnership broken
       inn.fow.push({ score: inn.runs, wkts: inn.wickets, player: dismissedId, over: oversText(inn.legalBalls) });
       wicketText = 'WICKET — ' + dismissalText(wkt);
 
@@ -244,6 +253,7 @@
     ensureBat(inn, pid, inn.battingOrder.indexOf(pid));
     inn.batStats[pid].retired = false; // a retired sub can be brought back, resuming their score
     if (inn.striker == null) inn.striker = pid; else inn.nonStriker = pid;
+    if (inn.striker && inn.nonStriker) openPartnership(inn); // both ends filled — new stand begins
   }
   function setNewBowler(match, pid) {
     const inn = cur(match);

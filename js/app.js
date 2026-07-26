@@ -634,6 +634,7 @@
           ${batRow(striker, bs, true)}
           ${nonStriker ? batRow(nonStriker, ns, false) : ''}
         </table>
+        ${(() => { const cp = inn.partnerships[inn.partnerships.length - 1]; return (cp && !cp.out && nonStriker) ? `<div class="small muted" style="margin-top:6px">Partnership: <b>${cp.runs}</b> (${cp.balls})</div>` : ''; })()}
         <div class="divider" style="margin:10px 0"></div>
         <table class="mini-table">
           <tr><th>Bowler</th><th>O</th><th>M</th><th>R</th><th>W</th><th>Econ</th></tr>
@@ -946,8 +947,9 @@
     const link = location.origin + location.pathname + '?watch=' + code;
     const s = sheet('Share live match', `
       <div class="center">
-        <div class="small muted">Anyone with this link can watch live — and tap “I'm scoring now” to take over.</div>
-        <div style="font-size:36px;font-weight:900;letter-spacing:8px;margin:12px 0;color:var(--accent)">${code}</div>
+        <div class="small muted">Scan to watch, or share the link / code below.</div>
+        <img class="qr" alt="Scan to watch" src="https://api.qrserver.com/v1/create-qr-code/?size=220x220&margin=10&data=${encodeURIComponent(link)}">
+        <div style="font-size:34px;font-weight:900;letter-spacing:8px;margin:6px 0 10px;color:var(--accent)">${code}</div>
       </div>
       <button class="btn wa block" id="sh-wa">📲 Share on WhatsApp</button>
       <input id="sh-link" value="${esc(link)}" readonly style="margin-top:10px">
@@ -1204,6 +1206,7 @@
         <tr><td colspan="2" class="dim">Extras (wd ${extras.wide}, nb ${extras.noball}, b ${extras.bye}, lb ${extras.legbye})</td><td colspan="5" style="text-align:left">${exTotal}</td></tr>
       </table>
       ${inn.fow.length ? `<div class="small muted" style="margin-top:6px"><b>Fall:</b> ${inn.fow.map((f) => `${f.score}-${f.wkts} (${esc(pname(f.player))}, ${f.over})`).join(', ')}</div>` : ''}
+      ${(inn.partnerships || []).filter((p) => p.runs > 0 || p.balls > 0).length ? `<div class="small muted" style="margin-top:4px"><b>Partnerships:</b> ${inn.partnerships.filter((p) => p.runs > 0 || p.balls > 0).map((p) => `${p.runs}${p.out ? '' : '*'} (${esc(pname(p.a))}/${esc(pname(p.b))})`).join(', ')}</div>` : ''}
       <table class="sc-table" style="margin-top:10px">
         <tr><th>Bowler</th><th>O</th><th>M</th><th>R</th><th>W</th><th>Econ</th></tr>
         ${bowlers.map((pid) => {

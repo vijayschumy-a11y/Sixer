@@ -194,6 +194,9 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--green)}
 .sc-table td:first-child{text-align:left}
 .sc-table .dim{color:var(--muted);font-size:11px}
 
+/* QR for live share */
+.qr{width:180px;height:180px;border-radius:12px;background:#fff;padding:8px;margin:10px auto 0;display:block}
+
 /* awards */
 .awards{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}
 .award{display:flex;gap:9px;align-items:flex-start;background:var(--bg2);border:1px solid var(--line);border-radius:12px;padding:9px 10px}
