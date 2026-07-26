@@ -834,8 +834,12 @@
 
     function chooseBowler() {
       const bowlTeam = match.teams[inn.bowlingTeam].players;
+      // mid-over replacement (e.g. bowler injured): part of an over already bowled and not complete
+      const midOver = !!inn.bowler && inn.curOverBowlerBalls > 0 && inn.curOverBowlerBalls < 6;
+      const ballsLeft = 6 - (inn.curOverBowlerBalls || 0);
       let avail = bowlTeam.map(pl);
-      if (inn.prevBowler && avail.length > 1) avail = avail.filter((p) => p.id !== inn.prevBowler);
+      if (midOver) avail = avail.filter((p) => p.id !== inn.bowler);        // just not the one going off
+      else if (inn.prevBowler && avail.length > 1) avail = avail.filter((p) => p.id !== inn.prevBowler);
       const maxO = match.rules.maxOversPerBowler || 0;
       const oversOf = (p) => { const w = inn.bowlStats[p.id]; return w ? Math.floor(w.balls / 6) : 0; };
       if (maxO > 0) {
@@ -843,7 +847,8 @@
         if (eligible.length) avail = eligible; else toast('All bowlers at their over limit');
       }
       const onSelect = (pid) => { SC.setNewBowler(match, pid); persist(); render(); };
-      pickPlayer('Bowler for this over', avail, onSelect, {
+      const title = midOver ? `Replace bowler · ${ballsLeft} ball${ballsLeft !== 1 ? 's' : ''} left this over` : 'Bowler for this over';
+      pickPlayer(title, avail, onSelect, {
         onAdd: () => addPlayerInMatch(inn.bowlingTeam, onSelect),
         sub: (p) => maxO > 0 ? `${oversOf(p)}/${maxO} overs` : `${oversOf(p)} overs bowled`,
       });
@@ -878,7 +883,7 @@
     function moreMenu() {
       const s = sheet('Match options', `<div class="opt-list">
         <button class="opt" data-act="sub">🔁 Substitute batter (super sub)</button>
-        <button class="opt" data-act="changebowler">🎯 Change current bowler</button>
+        <button class="opt" data-act="changebowler">🤕 Bowler injured / change bowler</button>
         <button class="opt" data-act="overs">📏 Change total overs</button>
         <button class="opt" data-act="endinn">End innings now</button>
         <button class="opt" data-act="retire">Retire striker</button>
