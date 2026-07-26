@@ -69,13 +69,14 @@
   };
 
   function snapshot(match) {
+    if (!match.undoStack) match.undoStack = []; // may be absent after a reload (not persisted)
     const snap = JSON.stringify({ innings: match.innings, currentInnings: match.currentInnings, result: match.result, status: match.status });
     match.undoStack.push(snap);
-    if (match.undoStack.length > 60) match.undoStack.shift();
+    if (match.undoStack.length > 30) match.undoStack.shift();
   }
-  function canUndo(match) { return match.undoStack.length > 0; }
+  function canUndo(match) { return !!(match.undoStack && match.undoStack.length); }
   function undo(match) {
-    if (!match.undoStack.length) return false;
+    if (!match.undoStack || !match.undoStack.length) return false;
     const snap = JSON.parse(match.undoStack.pop());
     match.innings = snap.innings;
     match.currentInnings = snap.currentInnings;

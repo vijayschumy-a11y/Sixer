@@ -48,12 +48,22 @@
     }
   }
 
+  // Don't persist per-ball undo snapshots — they balloon storage. Undo still
+  // works in-memory during the session; it just doesn't survive an app restart.
+  const stripUndo = (k, v) => (k === 'undoStack' ? undefined : v);
+
   function persist() {
     try {
-      localStorage.setItem(KEY, JSON.stringify(db));
+      localStorage.setItem(KEY, JSON.stringify(db, stripUndo));
     } catch (e) {
-      APP.toast && APP.toast('Storage full — export & clear old data', 'err');
-      console.error(e);
+      // Ran out of space anyway — drop undo history from live matches and retry once.
+      try {
+        db.matches.forEach((m) => { m.undoStack = []; });
+        localStorage.setItem(KEY, JSON.stringify(db, stripUndo));
+      } catch (e2) {
+        APP.toast && APP.toast('Storage full — export a backup, then delete old matches', 'err');
+        console.error(e2);
+      }
     }
   }
 

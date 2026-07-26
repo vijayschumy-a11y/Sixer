@@ -533,7 +533,7 @@
     // save locally + push to viewers when I hold the pen
     const persist = () => { S.Matches.save(match); if (shared && SY.amScorer()) SY.publish(match); };
 
-    actions.innerHTML = amScorer ? `<button class="btn sm ghost" id="lv-undo" ${SC.canUndo(match) ? '' : 'disabled'}>↺ Undo</button>` : '';
+    actions.innerHTML = amScorer ? `<button class="btn sm undo" id="lv-undo" ${SC.canUndo(match) ? '' : 'disabled'}>↺ Undo</button>` : '';
 
     const striker = inn.striker ? pl(inn.striker) : null;
     const nonStriker = inn.nonStriker ? pl(inn.nonStriker) : null;
@@ -564,18 +564,15 @@
         <button class="run-btn wkt-btn" id="lv-wkt">OUT</button>
       </div>
       <div class="pad-row">
-        <button class="btn" data-ex="wide">Wide</button>
-        <button class="btn" data-ex="noball">No-ball</button>
-        <button class="btn" data-ex="bye">Bye</button>
-        <button class="btn" data-ex="legbye">Leg bye</button>
+        <button class="btn sm" data-ex="wide">Wide</button>
+        <button class="btn sm" data-ex="noball">No-ball</button>
+        <button class="btn sm" data-ex="bye">Bye</button>
+        <button class="btn sm" data-ex="legbye">Leg bye</button>
       </div>
       <div class="pad-row">
-        <button class="btn undo" id="lv-undo2" ${SC.canUndo(match) ? '' : 'disabled'}>↺ Undo last ball</button>
         <button class="btn sm" id="lv-swap">⇄ Swap</button>
         <button class="btn sm" id="lv-bowler">🎯 Bowler</button>
-      </div>
-      <div class="pad-row" style="grid-template-columns:1fr 1fr">
-        <button class="btn sm" id="lv-card">📋 Scorecard</button>
+        <button class="btn sm" id="lv-card">📋 Card</button>
         <button class="btn sm" id="lv-more">⋯ More</button>
       </div>`;
 
@@ -649,7 +646,6 @@
     if (amScorer) {
       const doUndo = () => { if (SC.undo(match)) { persist(); pendingStrikeAsk = false; toast('Undone'); render(); } };
       if ($('#lv-undo')) $('#lv-undo').onclick = doUndo;
-      $('#lv-undo2').onclick = doUndo;
       $$('#screen [data-run]').forEach((b) => b.onclick = () => ball({ runs: parseInt(b.dataset.run, 10) }));
       $$('#screen [data-ex]').forEach((b) => b.onclick = () => extraFlow(b.dataset.ex));
       $('#lv-wkt').onclick = () => wicketFlow();
