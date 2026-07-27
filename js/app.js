@@ -1261,17 +1261,18 @@
     };
   }
 
+  function jerseyPrefix(pid) { const p = S.Players.get(pid); return p && p.jersey ? `<span class="jersey">#${esc(p.jersey)}</span> ` : ''; }
   function batRow(p, bs, strike) {
     if (!p || !bs) return '';
     const sr = bs.balls ? (bs.runs / bs.balls * 100).toFixed(0) : '0';
-    return `<tr><td class="${strike ? 'on-strike' : ''}">${esc(p.name)}</td>
+    return `<tr><td class="${strike ? 'on-strike' : ''}">${jerseyPrefix(p.id)}${esc(p.name)}</td>
       <td>${bs.runs}</td><td>${bs.balls}</td><td>${bs.fours}</td><td>${bs.sixes}</td><td>${sr}</td></tr>`;
   }
   function bowlRow(p, bw) {
     if (!p || !bw) return '';
     const ov = Math.floor(bw.balls / 6) + '.' + (bw.balls % 6);
     const econ = bw.balls ? (bw.runsConceded / bw.balls * 6).toFixed(1) : '0.0';
-    return `<tr><td>${esc(p.name)}</td><td>${ov}</td><td>${bw.maidens}</td><td>${bw.runsConceded}</td><td>${bw.wickets}</td><td>${econ}</td></tr>`;
+    return `<tr><td>${jerseyPrefix(p.id)}${esc(p.name)}</td><td>${ov}</td><td>${bw.maidens}</td><td>${bw.runsConceded}</td><td>${bw.wickets}</td><td>${econ}</td></tr>`;
   }
 
   // events delivered in the current (incomplete) over — reset each completed over
@@ -1386,7 +1387,7 @@
         ${batOrder.map((pid) => {
           const b = inn.batStats[pid];
           const sr = b.balls ? (b.runs / b.balls * 100).toFixed(0) : '0';
-          return `<tr><td data-pl="${pid}">${esc(pname(pid))}</td>
+          return `<tr><td data-pl="${pid}">${jerseyPrefix(pid)}${esc(pname(pid))}</td>
             <td class="dim" style="text-align:left">${b.out ? dismissalLine(b) : (b.retired ? 'retired' : 'not out')}</td>
             <td><b>${b.runs}</b></td><td>${b.balls}</td><td>${b.fours}</td><td>${b.sixes}</td><td>${sr}</td></tr>`;
         }).join('')}
@@ -1400,7 +1401,7 @@
           const w = inn.bowlStats[pid];
           const ov = Math.floor(w.balls / 6) + '.' + (w.balls % 6);
           const econ = w.balls ? (w.runsConceded / w.balls * 6).toFixed(1) : '0.0';
-          return `<tr><td data-pl="${pid}">${esc(pname(pid))}</td><td>${ov}</td><td>${w.maidens}</td><td>${w.runsConceded}</td><td><b>${w.wickets}</b></td><td>${econ}</td></tr>`;
+          return `<tr><td data-pl="${pid}">${jerseyPrefix(pid)}${esc(pname(pid))}</td><td>${ov}</td><td>${w.maidens}</td><td>${w.runsConceded}</td><td><b>${w.wickets}</b></td><td>${econ}</td></tr>`;
         }).join('')}
       </table>
     </div>`;
