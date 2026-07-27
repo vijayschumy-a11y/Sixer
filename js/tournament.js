@@ -15,13 +15,36 @@
     return fx;
   }
 
+  /* Double round-robin: each pair plays twice (home & away). */
+  function generateDoubleLeague(teamIds) {
+    const first = generateLeague(teamIds);
+    const second = [];
+    for (let i = 0; i < teamIds.length; i++) {
+      for (let j = i + 1; j < teamIds.length; j++) {
+        second.push({ id: APP.uid('fx'), round: 'league', a: teamIds[j], b: teamIds[i], matchId: null });
+      }
+    }
+    return first.concat(second);
+  }
+
+  /* Knockout: single-elimination bracket. */
+  function koLabel(n) { return n <= 2 ? 'Final' : n <= 4 ? 'Semi-Final' : n <= 8 ? 'Quarter-Final' : ('Round of ' + n); }
+  function buildKnockoutRound(teams, roundIdx) {
+    const round = 'ko' + roundIdx, label = koLabel(teams.length);
+    const arr = teams.slice(), byes = [];
+    if (arr.length % 2 === 1) byes.push(arr.shift()); // first listed gets a bye
+    const fx = [];
+    for (let i = 0; i + 1 < arr.length; i += 2) fx.push({ id: APP.uid('fx'), round, roundLabel: label, a: arr[i], b: arr[i + 1], matchId: null });
+    return { fx, byes };
+  }
+
   function create({ name, teamIds, rules, format }) {
-    return APP.store.Tournaments.add({
-      name, teamIds: teamIds.slice(), rules: Object.assign({}, rules),
-      format: format || 'league_playoffs',
-      fixtures: generateLeague(teamIds),
-      status: 'league',
-    });
+    format = format || 'league_playoffs';
+    let fixtures, koByes = {}, status = 'league';
+    if (format === 'knockout') { const r = buildKnockoutRound(teamIds, 0); fixtures = r.fx; koByes.ko0 = r.byes; status = 'knockout'; }
+    else if (format === 'double_rr') { fixtures = generateDoubleLeague(teamIds); }
+    else { fixtures = generateLeague(teamIds); }
+    return APP.store.Tournaments.add({ name, teamIds: teamIds.slice(), rules: Object.assign({}, rules), format, fixtures, koByes, status });
   }
 
   const matchOf = (fx) => (fx.matchId ? APP.store.Matches.get(fx.matchId) : null);
@@ -59,9 +82,41 @@
     }).sort((x, y) => y.pts - x.pts || y.nrr - x.nrr || x.name.localeCompare(y.name));
   }
 
+  // distinct round names in fixture order
+  function roundOrder(t) { const out = []; t.fixtures.forEach((f) => { if (!out.includes(f.round)) out.push(f.round); }); return out; }
+  function roundLabelOf(t, round) {
+    if (ROUND_LABEL[round]) return ROUND_LABEL[round];
+    const f = t.fixtures.find((x) => x.round === round);
+    return (f && f.roundLabel) || round;
+  }
+
   /* Advance the tournament: create playoff fixtures when they become possible. */
   function advance(t) {
     let changed = false;
+
+    if (t.format === 'knockout') {
+      const rounds = roundOrder(t);
+      const last = rounds[rounds.length - 1];
+      const roundFx = t.fixtures.filter((f) => f.round === last);
+      if (roundFx.length && roundFx.every(isPlayed)) {
+        const winners = roundFx.map(winnerOf);
+        if (winners.every(Boolean)) { // no unresolved ties
+          const byes = (t.koByes && t.koByes[last]) || [];
+          const advancing = byes.concat(winners);
+          if (advancing.length <= 1) { if (t.status !== 'done') { t.status = 'done'; changed = true; } }
+          else {
+            const idx = parseInt(last.replace('ko', ''), 10) + 1;
+            const r = buildKnockoutRound(advancing, idx);
+            t.koByes = t.koByes || {}; t.koByes['ko' + idx] = r.byes;
+            t.fixtures.push(...r.fx);
+            t.status = 'knockout'; changed = true;
+          }
+        }
+      }
+      if (changed) APP.store.Tournaments.save(t);
+      return changed;
+    }
+
     if (t.format === 'league_only') {
       if (leagueComplete(t) && t.status !== 'done') { t.status = 'done'; changed = true; }
       if (changed) APP.store.Tournaments.save(t);
@@ -100,6 +155,11 @@
   }
 
   function champion(t) {
+    if (t.format === 'knockout') {
+      const rounds = roundOrder(t); const last = rounds[rounds.length - 1];
+      const roundFx = t.fixtures.filter((f) => f.round === last);
+      return (t.status === 'done' && roundFx.length === 1 && isPlayed(roundFx[0])) ? winnerOf(roundFx[0]) : null;
+    }
     const fin = t.fixtures.find((f) => f.round === 'final');
     if (fin && isPlayed(fin)) return winnerOf(fin);
     if (t.format === 'league_only' && leagueComplete(t)) { const s = table(t); return s.length ? s[0].teamId : null; }
@@ -114,5 +174,6 @@
   APP.tournament = {
     ROUND_LABEL, create, generateLeague, table, advance, champion,
     nextFixture, winnerOf, isPlayed, matchOf, leagueComplete, leagueFixtures,
+    roundOrder, roundLabelOf,
   };
 })();

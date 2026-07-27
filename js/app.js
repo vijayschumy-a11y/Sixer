@@ -1518,6 +1518,8 @@
         <select id="cp-fmt">
           <option value="league_playoffs">League + Semis + Final</option>
           <option value="league_only">League only (top of table wins)</option>
+          <option value="double_rr">Double round-robin + playoffs</option>
+          <option value="knockout">Knockout (single elimination)</option>
         </select></label>
       <div class="small muted" style="margin:6px 0">Pick the teams taking part</div>
       <div class="plist" id="cp-teams" style="max-height:36vh;overflow:auto">
@@ -1566,17 +1568,17 @@
       return `<div class="list-link" data-fx="${f.id}">
         <div style="min-width:0">
           <div><b>${esc(teamName(f.a))}</b> <span class="muted">vs</span> <b>${esc(teamName(f.b))}</b></div>
-          <div class="small muted">${TR.ROUND_LABEL[f.round]}${done ? ' · ' + esc(m.result || '') : (live ? ' · in progress' : ' · not played')}</div>
+          <div class="small muted">${TR.roundLabelOf(t, f.round)}${done ? ' · ' + esc(m.result || '') : (live ? ' · in progress' : ' · not played')}</div>
         </div>
         <span class="badge ${done ? 'done' : (live ? 'live' : '')}">${done ? (w ? '🏅' : 'Tie') : (live ? 'Resume' : 'Play ▸')}</span>
       </div>`;
     };
-    const roundsOrder = ['league', 'sf1', 'sf2', 'final'];
-    const grouped = roundsOrder.filter((r) => t.fixtures.some((f) => f.round === r));
+    const isKO = t.format === 'knockout';
+    const grouped = TR.roundOrder(t);
 
     screen.innerHTML = `
       <div class="screen-title"><h2>${esc(t.name)}</h2>
-        <span class="badge ${t.status === 'done' ? 'done' : 'live'}">${t.status === 'done' ? 'Finished' : (t.status === 'playoffs' ? 'Playoffs' : 'League')}</span></div>
+        <span class="badge ${t.status === 'done' ? 'done' : 'live'}">${t.status === 'done' ? 'Finished' : (t.status === 'playoffs' ? 'Playoffs' : (isKO ? 'Knockout' : 'League'))}</span></div>
 
       ${champ ? `<div class="card center" style="border-color:#6a4f15;background:linear-gradient(180deg,#241b06,#1a1405)">
         <div class="small" style="color:var(--accent);letter-spacing:2px">🏆 CHAMPION</div>
@@ -1584,24 +1586,25 @@
 
       ${next && t.status !== 'done' ? `<button class="btn primary block" id="cup-next" style="margin:12px 0;padding:16px">
         ▸ Play next: ${esc(teamName(next.a))} vs ${esc(teamName(next.b))}
-        <span class="small" style="opacity:.75">(${TR.ROUND_LABEL[next.round]})</span></button>` : ''}
+        <span class="small" style="opacity:.75">(${TR.roundLabelOf(t, next.round)})</span></button>` : ''}
 
-      <div class="card">
+      ${isKO ? '' : `<div class="card">
         <h4>Points table</h4>
         <table class="sc-table" style="margin-top:8px">
           <tr><th style="text-align:left">Team</th><th>P</th><th>W</th><th>L</th><th>T</th><th>Pts</th><th>NRR</th></tr>
           ${rows.map((r, i) => `<tr>
-            <td style="text-align:left">${i < 4 && t.format === 'league_playoffs' && rows.length >= 4 ? '<span style="color:var(--green)">•</span> ' : ''}${esc(r.name)}</td>
+            <td style="text-align:left">${i < 4 && (t.format === 'league_playoffs' || t.format === 'double_rr') && rows.length >= 4 ? '<span style="color:var(--green)">•</span> ' : ''}${esc(r.name)}</td>
             <td>${r.p}</td><td>${r.w}</td><td>${r.l}</td><td>${r.t}</td><td><b>${r.pts}</b></td>
             <td style="color:${r.nrr >= 0 ? 'var(--green)' : 'var(--red)'}">${r.nrrStr}</td></tr>`).join('')}
         </table>
-        ${t.format === 'league_playoffs' && rows.length >= 4 ? '<div class="small muted" style="margin-top:6px">• Top 4 qualify for the semi-finals</div>' : ''}
-      </div>
+        ${(t.format === 'league_playoffs' || t.format === 'double_rr') && rows.length >= 4 ? '<div class="small muted" style="margin-top:6px">• Top 4 qualify for the semi-finals</div>' : ''}
+      </div>`}
 
       ${awardCard('🏅 Tournament awards', ST.awards(S.Tournaments.matches(t.id)), 'Player of the tournament')}
 
-      ${grouped.map((r) => `<div class="card"><h4>${TR.ROUND_LABEL[r]}</h4>
-        <div style="margin-top:8px">${t.fixtures.filter((f) => f.round === r).map(fixtureRow).join('')}</div></div>`).join('')}
+      ${grouped.map((r) => { const byes = (t.koByes && t.koByes[r]) || []; return `<div class="card"><h4>${esc(TR.roundLabelOf(t, r))}</h4>
+        <div style="margin-top:8px">${t.fixtures.filter((f) => f.round === r).map(fixtureRow).join('')}</div>
+        ${byes.length ? `<div class="small muted" style="margin-top:6px">Bye: ${byes.map((id) => esc(teamName(id))).join(', ')}</div>` : ''}</div>`; }).join('')}
     `;
     if ($('#cup-next')) $('#cup-next').onclick = () => openFixture(t, next);
     $$('#screen [data-fx]').forEach((e) => e.onclick = () => openFixture(t, t.fixtures.find((f) => f.id === e.dataset.fx)));
