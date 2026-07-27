@@ -35,12 +35,15 @@
   function genCode() { let s = ''; for (let i = 0; i < 4; i++) s += CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)]; return s; }
 
   /* Build a name map + team names so viewers (who lack local players) can render. */
+  // Fields viewers don't need — stripping them keeps each publish tiny (no lag).
+  const OMIT = { undoStack: 1 };
   function payloadFor(match) {
     const names = {};
     match.teams.forEach((t) => t.players.forEach((pid) => {
       names[pid] = (APP.syncNames && APP.syncNames[pid]) || (APP.store.Players.get(pid) || {}).name || 'Player';
     }));
-    return { match: JSON.parse(JSON.stringify(match)), names, updatedAt: Date.now() };
+    const clean = JSON.parse(JSON.stringify(match, (k, v) => (OMIT[k] ? undefined : v)));
+    return { match: clean, names, updatedAt: Date.now() };
   }
 
   function amScorer() { return !!(state.scorer && state.scorer.id === clientId); }
