@@ -1841,8 +1841,17 @@
       </div>
 
       <div class="card">
-        <h4>Backup & restore</h4>
-        <p class="muted small">All data lives on this device. Export regularly.</p>
+        <h4>☁️ Cloud backup</h4>
+        <p class="muted small">Back up your whole database (players, teams, matches, stats) to the cloud so it survives a lost phone. Keep your backup code to restore on any device.</p>
+        <div id="st-cloudcode" class="small" style="margin:6px 0"></div>
+        <button class="btn primary block" id="st-cloud-backup" ${SY.available() ? '' : 'disabled'}>☁️ Back up now</button>
+        <button class="btn block" id="st-cloud-restore" style="margin-top:8px" ${SY.available() ? '' : 'disabled'}>☁️ Restore from a code</button>
+        ${SY.available() ? '' : '<p class="small muted" style="margin-top:6px">Cloud sync needs Firebase to be set up (it is, on this build).</p>'}
+      </div>
+
+      <div class="card">
+        <h4>Backup & restore (file)</h4>
+        <p class="muted small">Or keep an offline copy as a file.</p>
         <button class="btn block" id="st-export" style="margin-top:8px">⬇️ Export backup (JSON)</button>
         <button class="btn block" id="st-import" style="margin-top:8px">⬆️ Import backup</button>
         <input type="file" id="st-file" accept="application/json" class="hidden">
@@ -1855,6 +1864,34 @@
     $('#st-save').onclick = () => {
       S.Settings.updateDefaults({ oversPerInnings: clampInt($('#st-overs').value, 1, 50, 6), playersPerSide: clampInt($('#st-pps').value, 2, 16, 8) });
       toast('Defaults saved');
+    };
+    // ---- cloud backup ----
+    const savedCode = localStorage.getItem('sixer.backupCode');
+    const codeEl = $('#st-cloudcode');
+    if (codeEl && savedCode) codeEl.innerHTML = `Your backup code: <b style="color:var(--accent);letter-spacing:2px">${esc(savedCode)}</b> — keep it safe`;
+    if ($('#st-cloud-backup')) $('#st-cloud-backup').onclick = () => {
+      if (!SY.available()) return toast('Cloud not available', 'err');
+      let code = localStorage.getItem('sixer.backupCode');
+      if (!code) { code = ''; for (let i = 0; i < 6; i++) code += 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[Math.floor(Math.random() * 32)]; localStorage.setItem('sixer.backupCode', code); }
+      const btn = $('#st-cloud-backup'); btn.textContent = '☁️ Backing up…'; btn.disabled = true;
+      SY.cloudBackup(code, S.exportJSON()).then((ok) => {
+        btn.disabled = false; btn.textContent = '☁️ Back up now';
+        if (ok) { localStorage.setItem('sixer.backupAt', String(Date.now())); toast('Backed up · code ' + code); if (codeEl) codeEl.innerHTML = `Your backup code: <b style="color:var(--accent);letter-spacing:2px">${esc(code)}</b> — keep it safe`; }
+        else toast('Backup failed — check cloud rules', 'err');
+      });
+    };
+    if ($('#st-cloud-restore')) $('#st-cloud-restore').onclick = () => {
+      prompt('Restore from cloud', '6-letter backup code', localStorage.getItem('sixer.backupCode') || '', (code) => {
+        code = (code || '').trim().toUpperCase(); if (!code) return;
+        toast('Fetching…');
+        SY.cloudRestore(code).then((v) => {
+          if (!v) return toast('No backup found for that code', 'err');
+          confirm('Restore backup?', 'This replaces everything on this device with the cloud backup from ' + fmtDate(v.ts) + '.', () => {
+            try { S.importJSON(v.data); localStorage.setItem('sixer.backupCode', code); toast('Restored from cloud'); go('home'); }
+            catch (e) { toast('Backup was unreadable', 'err'); }
+          }, 'Restore');
+        });
+      }, 'e.g. K7PWA2');
     };
     $('#st-export').onclick = () => download(`sixer-backup-${new Date().toISOString().slice(0, 10)}.json`, S.exportJSON());
     $('#st-import').onclick = () => $('#st-file').click();

@@ -127,6 +127,16 @@
     return database.ref('rooms/' + state.code + '/request').remove().catch(() => {});
   }
 
+  /* ---------- Whole-database cloud backup/restore ---------- */
+  function cloudBackup(code, jsonStr) {
+    if (!init()) return Promise.resolve(false);
+    return database.ref('backups/' + code).set({ data: jsonStr, ts: Date.now() }).then(() => true).catch((e) => { console.warn('backup failed', e); return false; });
+  }
+  function cloudRestore(code) {
+    if (!init()) return Promise.resolve(null);
+    return database.ref('backups/' + code).once('value').then((s) => { const v = s.val(); return v && v.data ? v : null; }).catch(() => null);
+  }
+
   /* One-shot read of a room's current state (for the Home rejoin banner). */
   function peekRoom(code) {
     if (!init()) return Promise.resolve(null);
@@ -161,6 +171,7 @@
   APP.sync = {
     configured, available, init, createRoom, join, leave, publish, claimScorer,
     requestScorer, cancelRequest, approveRequest, declineRequest, peekRoom,
+    cloudBackup, cloudRestore,
     presenceCount, viewerCount, isPresent,
     amScorer, clientId: () => clientId,
     currentScorer: () => state.scorer,
