@@ -7,7 +7,7 @@
     return {
       id: uid(),
       sessionId: cfg.sessionId || null,
-      date: Date.now(),
+      date: cfg.date || Date.now(),
       status: 'live',
       format: cfg.format || 'box',
       venue: cfg.venue || '',

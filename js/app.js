@@ -1,7 +1,7 @@
 /* Sixer — app shell: router + screens. */
 (function () {
   const APP = window.Sixer;
-  const { $, $$, esc, toast, avatar, pname, sheet, pick, confirm, prompt, statTile, fmtDate, fmtDay, download } = APP.ui;
+  const { $, $$, esc, toast, avatar, pname, sheet, pick, confirm, prompt, statTile, fmtDate, fmtDay, fmtTime, fmtDateTime, toDatetimeLocal, download } = APP.ui;
   const S = APP.store, SC = APP.scoring, ST = APP.stats, TR = APP.tournament, SY = APP.sync;
 
   // player object, or a lightweight stand-in for viewers who don't hold the squad locally
@@ -149,7 +149,7 @@
     return `<div class="list-link" data-match="${m.id}">
       <div style="min-width:0">
         <div><b>${esc(SC.teamName(m, 0))}</b> vs <b>${esc(SC.teamName(m, 1))}</b></div>
-        <div class="small muted">${esc(m.result || 'In progress')} · ${fmtDate(m.date)}</div>
+        <div class="small muted">${esc(m.result || 'In progress')} · ${fmtDateTime(m.date)}${m.venue ? ' · 📍 ' + esc(m.venue) : ''}</div>
       </div>
       <span class="badge ${m.status === 'live' ? 'live' : 'done'}">${m.status === 'live' ? 'LIVE' : 'Result'}</span>
     </div>`;
@@ -389,7 +389,7 @@
   function newMatchScreen(screen) {
     const d = S.Settings.get().defaults;
     if (!draft) draft = {
-      format: d.format, venue: '',
+      format: d.format, venue: '', date: Date.now(),
       rules: Object.assign({}, d),
       teamNames: ['Team A', 'Team B'],
       teamMeta: [{}, {}], // {teamId, logo} per side, when loaded from a saved team
@@ -460,6 +460,12 @@
             <select id="ms-dec"><option value="bat" ${draft.toss.decision === 'bat' ? 'selected' : ''}>Bat</option><option value="bowl" ${draft.toss.decision === 'bowl' ? 'selected' : ''}>Bowl</option></select></label>
         </div>
         <button class="btn sm" id="ms-flip">🎲 Auto flip</button>
+      </div>
+
+      <div class="card">
+        <h4>Match details</h4>
+        <label class="field"><span>Venue</span><input id="ms-venue" value="${esc(draft.venue || '')}" placeholder="e.g. Anna Nagar Box Arena"></label>
+        <label class="field"><span>Date & time</span><input id="ms-datetime" type="datetime-local" value="${toDatetimeLocal(draft.date || Date.now())}"></label>
       </div>
 
       <div class="card">
@@ -546,6 +552,9 @@
       draft.rules.noBallRuns = clampInt($('#ms-nbr').value, 0, 5, 1);
       draft.teamNames[0] = $('#ms-t0').value.trim() || 'Team A';
       draft.teamNames[1] = $('#ms-t1').value.trim() || 'Team B';
+      draft.venue = ($('#ms-venue') ? $('#ms-venue').value.trim() : draft.venue) || '';
+      const dtv = $('#ms-datetime') ? $('#ms-datetime').value : '';
+      draft.date = dtv ? new Date(dtv).getTime() : (draft.date || Date.now());
       draft.toss.wonBy = parseInt($('#ms-toss').value, 10);
       draft.toss.decision = $('#ms-dec').value;
     }
@@ -577,7 +586,7 @@
     if (t0.length < 1 || t1.length < 1) return toast('Assign at least 1 player to each team', 'err');
     const meta = draft.teamMeta || [{}, {}];
     const cfg = {
-      sessionId: draft.sessionId, format: draft.format, venue: draft.venue,
+      sessionId: draft.sessionId, format: draft.format, venue: draft.venue, date: draft.date,
       rules: Object.assign({}, draft.rules),
       teams: [
         { name: draft.teamNames[0], players: t0, teamId: (meta[0] || {}).teamId, logo: (meta[0] || {}).logo || '' },
@@ -1334,8 +1343,9 @@
             ${teamLogoHTML({ logo: match.teams[1].logo, name: SC.teamName(match, 1) })}
             <b>${esc(SC.teamName(match, 1))}</b>
           </div>
-          <span class="muted small">${fmtDate(match.date)}</span>
+          <span class="muted small">${fmtDateTime(match.date)}</span>
         </div>
+        ${match.venue ? `<div class="muted small" style="margin-top:4px">📍 ${esc(match.venue)}</div>` : ''}
         <div style="margin-top:6px" class="muted small">${match.format === 'box' ? '📦 Box cricket' : '🌳 Ground'} · ${match.rules.oversPerInnings} ov · ${match.rules.playersPerSide}-a-side ${match.rules.lastManStanding ? '· Last Man Standing' : ''}</div>
         <div style="margin-top:8px;font-size:16px"><b>${esc(match.result || 'In progress')}</b></div>
         <div class="muted small">Toss: ${esc(SC.teamName(match, match.toss.wonBy))} elected to ${match.toss.decision}</div>
@@ -1474,6 +1484,7 @@
   function scorecardText(match) {
     const lines = [];
     lines.push(`🏏 *${SC.teamName(match, 0)}* vs *${SC.teamName(match, 1)}*`);
+    lines.push(`${fmtDateTime(match.date)}${match.venue ? ' · 📍 ' + match.venue : ''}`);
     match.innings.forEach((inn) => lines.push(`${SC.teamName(match, inn.battingTeam)}: ${inn.runs}/${inn.wickets} (${SC.oversText(inn.legalBalls)} ov)`));
     lines.push(match.result || 'In progress');
     const potm = ST.playerOfMatch(match);
@@ -1774,8 +1785,9 @@
   }
 
   // Start another match reusing the two teams from the last match in a session
-  function tossThenStart(teamA, teamB, rules, format, sessionId) {
+  function tossThenStart(teamA, teamB, rules, format, sessionId, venue) {
     const s = sheet('Toss', `
+      <label class="field"><span>Venue</span><input id="ts-venue" value="${esc(venue || '')}" placeholder="Venue"></label>
       <div class="small muted" style="margin-bottom:7px">Who won the toss?</div>
       <div class="chips" id="ts-who">
         <button class="chip sel" data-w="0">${esc(teamA.name)}</button>
@@ -1796,8 +1808,9 @@
     wire('#ts-dec', 'd', (v) => decision = v);
     $('#ts-flip', s.overlay).onclick = () => { const r = flipToss(s.overlay, teamA.name, teamB.name); wonBy = r.wonBy; decision = r.decision; };
     $('#ts-ok', s.overlay).onclick = () => {
+      const v = $('#ts-venue', s.overlay) ? $('#ts-venue', s.overlay).value.trim() : '';
       s.close();
-      const match = SC.newMatch({ sessionId, format: format || 'box', rules: Object.assign({}, rules), teams: [teamA, teamB], toss: { wonBy, decision } });
+      const match = SC.newMatch({ sessionId, format: format || 'box', rules: Object.assign({}, rules), teams: [teamA, teamB], toss: { wonBy, decision }, venue: v, date: Date.now() });
       openInningsFlow(match);
     };
   }
@@ -1809,7 +1822,7 @@
     tossThenStart(
       { name: A.name, players: A.players.slice(), teamId: A.teamId, logo: A.logo || '' },
       { name: B.name, players: B.players.slice(), teamId: B.teamId, logo: B.logo || '' },
-      last.rules, last.format, se.id);
+      last.rules, last.format, se.id, last.venue || '');
   }
 
   function sessionScreen(screen, params, actions) {

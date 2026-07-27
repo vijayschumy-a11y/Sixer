@@ -161,7 +161,7 @@
       ${potmSVG}
 
       <line x1="80" y1="${IH - 130}" x2="${IW - 80}" y2="${IH - 130}" stroke="#23362d" stroke-width="2"/>
-      <text x="80" y="${IH - 80}" fill="#5f7a6e" font-size="26">${xesc(APP.ui.fmtDate(match.date))}${match.rules.lastManStanding ? ' · Last Man Standing' : ''}</text>
+      <text x="80" y="${IH - 80}" fill="#5f7a6e" font-size="26">${xesc(trunc(APP.ui.fmtDateTime(match.date) + (match.venue ? ' · ' + match.venue : ''), 52))}</text>
       <text x="${IW - 80}" y="${IH - 80}" fill="#5f7a6e" font-size="26" text-anchor="end">${match.rules.playersPerSide}-a-side</text>
     </svg>`;
   }

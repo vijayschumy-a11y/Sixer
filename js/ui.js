@@ -97,6 +97,15 @@
     const d = new Date(ts);
     return d.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
   }
+  function fmtTime(ts) {
+    return new Date(ts).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  }
+  function fmtDateTime(ts) { return fmtDate(ts) + ', ' + fmtTime(ts); }
+  // value for <input type="datetime-local"> in local time
+  function toDatetimeLocal(ts) {
+    const d = new Date(ts); const p = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+  }
 
   function download(filename, text) {
     const blob = new Blob([text], { type: 'application/json' });
@@ -106,6 +115,6 @@
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
-  APP.ui = { $, $$, esc, toast, initials, avatar, pname, sheet, pick, confirm, prompt, statTile, fmtDate, fmtDay, download };
+  APP.ui = { $, $$, esc, toast, initials, avatar, pname, sheet, pick, confirm, prompt, statTile, fmtDate, fmtDay, fmtTime, fmtDateTime, toDatetimeLocal, download };
   APP.toast = toast;
 })();
