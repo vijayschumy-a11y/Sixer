@@ -97,6 +97,42 @@
     return svgWrap(body) + legend(match);
   }
 
+  // cumulative run rate at each over boundary (and the final partial over)
+  function rrSeries(inn) {
+    let cum = 0, legal = 0; const pts = [];
+    inn.timeline.forEach((ev) => {
+      cum += ev.teamRuns;
+      if (ev.legal) { legal++; if (legal % 6 === 0) pts.push({ overs: legal / 6, rr: cum / (legal / 6) }); }
+    });
+    if (legal % 6 !== 0 && legal > 0) pts.push({ overs: legal / 6, rr: cum / (legal / 6) });
+    return pts;
+  }
+
+  function runRateSVG(match) {
+    const maxO = maxOvers(match);
+    const series = match.innings.map(rrSeries);
+    let maxV = 1;
+    series.forEach((pts) => pts.forEach((p) => { maxV = Math.max(maxV, p.rr); }));
+    // required rate to win (2nd innings): target over full quota
+    let reqRR = null;
+    if (match.innings[1]) { reqRR = (match.innings[0].runs + 1) / match.rules.oversPerInnings; maxV = Math.max(maxV, reqRR); }
+    maxV = Math.ceil(maxV) + 1;
+    let body = axes(maxO, maxV, 'Run rate');
+    if (reqRR != null) {
+      const y = py(reqRR, maxV);
+      body += `<line x1="${PADL}" y1="${y}" x2="${W - PADR}" y2="${y}" stroke="#ffd24a" stroke-dasharray="5 4" opacity="0.7"/>
+        <text x="${W - PADR}" y="${y - 4}" fill="#ffd24a" font-size="10" text-anchor="end">Req ${reqRR.toFixed(2)}</text>`;
+    }
+    series.forEach((pts, idx) => {
+      if (!pts.length) return;
+      const line = pts.map((p) => `${px(p.overs, maxO)},${py(p.rr, maxV)}`);
+      body += `<polyline points="${line.join(' ')}" fill="none" stroke="${C[idx]}" stroke-width="2.5" stroke-linejoin="round"/>`;
+      const last = pts[pts.length - 1];
+      body += `<circle cx="${px(last.overs, maxO)}" cy="${py(last.rr, maxV)}" r="3" fill="${C[idx]}"/>`;
+    });
+    return svgWrap(body) + legend(match);
+  }
+
   function svgWrap(body) {
     return `<svg viewBox="0 0 ${W} ${H}" width="100%" preserveAspectRatio="xMidYMid meet" style="display:block">${body}</svg>`;
   }
@@ -166,5 +202,5 @@
     </svg>`;
   }
 
-  APP.charts = { perOver, wormSVG, manhattanSVG, scorecardCardSVG };
+  APP.charts = { perOver, wormSVG, manhattanSVG, runRateSVG, scorecardCardSVG };
 })();

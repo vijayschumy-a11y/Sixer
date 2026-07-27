@@ -1333,6 +1333,12 @@
   /* =========================================================
      SCORECARD
   ========================================================= */
+  function chartSVG(match, kind) {
+    if (kind === 'manhattan') return APP.charts.manhattanSVG(match);
+    if (kind === 'runrate') return APP.charts.runRateSVG(match);
+    return APP.charts.wormSVG(match);
+  }
+
   function scorecardScreen(screen, params, actions) {
     const match = S.Matches.get(params.id);
     if (!match) return go('home');
@@ -1373,8 +1379,9 @@
 
       ${hasBalls ? `<div class="card">
         <div class="tabs"><button data-ch="worm" class="${cardChart === 'worm' ? 'active' : ''}">📈 Worm</button>
-          <button data-ch="manhattan" class="${cardChart === 'manhattan' ? 'active' : ''}">📊 Manhattan</button></div>
-        <div id="chart-box" style="margin-top:12px">${cardChart === 'worm' ? APP.charts.wormSVG(match) : APP.charts.manhattanSVG(match)}</div>
+          <button data-ch="manhattan" class="${cardChart === 'manhattan' ? 'active' : ''}">📊 Manhattan</button>
+          <button data-ch="runrate" class="${cardChart === 'runrate' ? 'active' : ''}">📉 Run rate</button></div>
+        <div id="chart-box" style="margin-top:12px">${chartSVG(match, cardChart)}</div>
       </div>` : ''}
 
       ${match.innings.map((inn, i) => inningsCard(match, inn, i)).join('')}
@@ -1385,7 +1392,7 @@
     $$('#screen [data-ch]').forEach((b) => b.onclick = () => {
       cardChart = b.dataset.ch;
       $$('#screen [data-ch]').forEach((x) => x.classList.toggle('active', x.dataset.ch === cardChart));
-      $('#chart-box').innerHTML = cardChart === 'worm' ? APP.charts.wormSVG(match) : APP.charts.manhattanSVG(match);
+      $('#chart-box').innerHTML = chartSVG(match, cardChart);
     });
     if ($('#card-resume')) $('#card-resume').onclick = () => go('live', { id: match.id });
     $('#card-del').onclick = () => confirm('Delete match?', 'Remove permanently?', () => { S.Matches.remove(match.id); go('home'); }, 'Delete', true);
