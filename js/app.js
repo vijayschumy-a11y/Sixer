@@ -203,7 +203,7 @@
       <p class="muted small">Save a team once, then just pick it when starting a match or tournament.</p>
       <div class="plist" style="margin-top:10px">
         ${teams.length ? teams.map((t) => `<div class="prow" data-tm="${t.id}" style="align-items:flex-start">
-            <div class="avatar">${esc(initialsOf(t.name))}</div>
+            ${teamLogoHTML(t)}
             <div class="meta"><div class="nm">${esc(t.name)} <span class="muted small">· ${t.players.length}</span></div>
               <div class="sub">${t.players.length ? t.players.map((id) => esc(pname(id))).join(', ') : 'No players yet'}</div></div>
             <span class="muted">›</span></div>`).join('')
@@ -214,12 +214,19 @@
     $$('#screen [data-tm]').forEach((e) => e.onclick = () => editTeam(e.dataset.tm));
   }
   function initialsOf(n) { return (n || '?').trim().split(/\s+/).map((w) => w[0]).slice(0, 2).join('').toUpperCase(); }
+  function teamLogoHTML(team, cls) {
+    if (team && team.logo) return `<img class="avatar ${cls || ''}" src="${team.logo}" alt="">`;
+    return `<div class="avatar ${cls || ''}">${esc(initialsOf(team && team.name || ''))}</div>`;
+  }
 
   function editTeam(id) {
     const t = id ? S.Teams.get(id) : null;
     const sel = new Set(t ? t.players : []);
     const players = S.Players.all();
+    let logo = t ? (t.logo || '') : '';
     const s = sheet(t ? 'Edit team' : 'New team', `
+      <div class="center"><div id="tm-logo" style="display:inline-block">${teamLogoHTML({ logo, name: t ? t.name : '' }, 'xl')}</div></div>
+      <button class="btn block" id="tm-logo-btn" style="margin-top:10px">🖼️ Team logo</button>
       <label class="field"><span>Team name</span><input id="tm-name" value="${esc(t ? t.name : '')}" placeholder="e.g. Chennai Smashers"></label>
       <div class="small muted" style="margin:6px 0">Tap players to add them to this team</div>
       <div class="plist" id="tm-pool" style="max-height:46vh;overflow:auto">
@@ -238,11 +245,12 @@
       else { sel.add(pid); row.style.borderColor = 'var(--green)'; row.style.background = 'var(--green-d)'; row.querySelector('.pill').className = 'pill on'; row.querySelector('.pill').textContent = '✓'; }
       $('#tm-count', s.overlay).textContent = sel.size + ' selected';
     });
+    $('#tm-logo-btn', s.overlay).onclick = () => APP.photo.capture((data) => { if (data) { logo = data; $('#tm-logo', s.overlay).innerHTML = teamLogoHTML({ logo, name: $('#tm-name', s.overlay).value }, 'xl'); } });
     $('#tm-save', s.overlay).onclick = () => {
       const name = $('#tm-name', s.overlay).value.trim();
       if (!name) return toast('Enter a team name', 'err');
       if (!sel.size) return toast('Pick at least one player', 'err');
-      const data = { name, players: Array.from(sel) };
+      const data = { name, players: Array.from(sel), logo };
       if (t) S.Teams.update(t.id, data); else S.Teams.add(data);
       s.close(); toast(t ? 'Team saved' : 'Team created'); render();
     };
@@ -255,7 +263,7 @@
   function playerRow(p) {
     return `<div class="prow" data-pl="${p.id}">
       ${avatar(p)}
-      <div class="meta"><div class="nm">${esc(p.name)}</div>
+      <div class="meta"><div class="nm">${p.jersey ? `<span class="jersey">#${esc(p.jersey)}</span> ` : ''}${esc(p.name)}</div>
         <div class="sub">${ROLE_LABEL[p.role] || p.role} · ${p.batHand === 'left' ? 'LHB' : 'RHB'}</div></div>
       <span class="muted">›</span>
     </div>`;
@@ -264,11 +272,14 @@
   function editPlayer(id) {
     const p = id ? S.Players.get(id) : null;
     const draft = { photo: p ? p.photo : '', name: p ? p.name : '', role: p ? p.role : 'allrounder',
-      batHand: p ? p.batHand : 'right', bowlStyle: p ? p.bowlStyle : 'right-arm' };
+      batHand: p ? p.batHand : 'right', bowlStyle: p ? p.bowlStyle : 'right-arm', jersey: p ? (p.jersey || '') : '' };
     const s = sheet(p ? 'Edit player' : 'Add player', `
       <div class="center"><div id="ep-ava" style="display:inline-block">${avatar(draft.photo ? draft : null, 'xl')}</div></div>
       <button class="btn block" id="ep-photo" style="margin-top:10px">📸 Take / change photo</button>
-      <label class="field"><span>Name</span><input id="ep-name" value="${esc(draft.name)}" placeholder="Player name"></label>
+      <div class="grid cols-2">
+        <label class="field"><span>Name</span><input id="ep-name" value="${esc(draft.name)}" placeholder="Player name"></label>
+        <label class="field"><span>Jersey #</span><input id="ep-jersey" type="number" min="0" max="999" value="${esc(draft.jersey)}" placeholder="e.g. 7"></label>
+      </div>
       <label class="field"><span>Role</span>
         <select id="ep-role">
           ${Object.entries(ROLE_LABEL).map(([k, v]) => `<option value="${k}" ${draft.role === k ? 'selected' : ''}>${v}</option>`).join('')}
@@ -291,7 +302,8 @@
       const name = $('#ep-name', s.overlay).value.trim();
       if (!name) return toast('Enter a name', 'err');
       const data = { name, photo: draft.photo, role: $('#ep-role', s.overlay).value,
-        batHand: $('#ep-bat', s.overlay).value, bowlStyle: $('#ep-bowl', s.overlay).value };
+        batHand: $('#ep-bat', s.overlay).value, bowlStyle: $('#ep-bowl', s.overlay).value,
+        jersey: ($('#ep-jersey', s.overlay).value || '').trim() };
       if (p) S.Players.update(p.id, data); else S.Players.add(data);
       s.close(); toast(p ? 'Player updated' : 'Player added'); render();
     };
@@ -315,7 +327,7 @@
     screen.innerHTML = `
       <div class="card center">
         ${avatar(p, 'xl')}
-        <h2 style="margin-top:10px">${esc(p.name)}</h2>
+        <h2 style="margin-top:10px">${p.jersey ? `<span class="jersey">#${esc(p.jersey)}</span> ` : ''}${esc(p.name)}</h2>
         <div class="muted small">${ROLE_LABEL[p.role] || p.role} · ${p.batHand === 'left' ? 'Left-hand bat' : 'Right-hand bat'} · ${esc(p.bowlStyle)}</div>
         <div class="row" style="justify-content:center;gap:6px;margin-top:8px">
           <span class="pill">${c.mat} matches</span>
@@ -380,10 +392,12 @@
       format: d.format, venue: '',
       rules: Object.assign({}, d),
       teamNames: ['Team A', 'Team B'],
-      assign: {}, // pid -> 0|1
+      teamMeta: [{}, {}], // {teamId, logo} per side, when loaded from a saved team
+      assign: {}, // pid -> 0 | 1 | 'j'
       sessionId: null,
       toss: { wonBy: 0, decision: 'bat' },
     };
+    if (!draft.teamMeta) draft.teamMeta = [{}, {}];
     const players = S.Players.all();
     const sessions = S.Sessions.all();
     const r = draft.rules;
@@ -425,7 +439,11 @@
           <label class="field"><span>Team 1</span><input id="ms-t0" value="${esc(draft.teamNames[0])}"></label>
           <label class="field"><span>Team 2</span><input id="ms-t1" value="${esc(draft.teamNames[1])}"></label>
         </div>
-        <div class="row spread" style="margin:4px 0 8px"><span class="muted small">Tap a player to add them to a team</span>
+        ${S.Teams.all().length ? `<div class="cap-grid" style="margin-top:2px">
+          <button class="btn sm" id="ms-load0">📋 Load into Team 1</button>
+          <button class="btn sm" id="ms-load1">📋 Load into Team 2</button>
+        </div>` : '<div class="muted small">Tip: save teams under Squad → Teams (with logos) to load them here.</div>'}
+        <div class="row spread" style="margin:8px 0 8px"><span class="muted small">…or tap players to build a side</span>
           <button class="btn sm" id="ms-quick">➕ Quick add</button></div>
         <div id="ms-counts" class="team-counts"></div>
         <div id="ms-pool" class="plist" style="margin-top:8px">
@@ -461,6 +479,22 @@
     $$('#screen [data-fmt]').forEach((b) => b.onclick = () => { draft.format = b.dataset.fmt; saveDraftInputs(); render(); });
     $$('#screen [data-tg]').forEach((b) => b.onclick = () => { const k = b.dataset.tg; draft.rules[k] = !draft.rules[k]; saveDraftInputs(); render(); });
     $('#ms-quick').onclick = () => newPlayerSheet((name, photo) => { resolvePlayer(name, photo); saveDraftInputs(); render(); });
+    const loadTeamInto = (side) => {
+      const teams = S.Teams.all();
+      if (!teams.length) return toast('No saved teams — create one in Squad → Teams', 'err');
+      pick('Load into Team ' + (side + 1), teams.map((t) => ({ id: t.id, html: `${teamLogoHTML(t)}<div style="flex:1"><div>${esc(t.name)}</div><div class="small muted">${t.players.length} players</div></div>` })), (tid) => {
+        const t = S.Teams.get(tid); if (!t) return;
+        saveDraftInputs();
+        draft.teamNames[side] = t.name;
+        draft.teamMeta[side] = { teamId: t.id, logo: t.logo || '' };
+        Object.keys(draft.assign).forEach((pid) => { if (draft.assign[pid] === side) delete draft.assign[pid]; });
+        t.players.forEach((pid) => { if (draft.assign[pid] !== 'j' && draft.assign[pid] !== (side === 0 ? 1 : 0)) draft.assign[pid] = side; });
+        render();
+        toast(t.name + ' loaded into Team ' + (side + 1));
+      });
+    };
+    if ($('#ms-load0')) $('#ms-load0').onclick = () => loadTeamInto(0);
+    if ($('#ms-load1')) $('#ms-load1').onclick = () => loadTeamInto(1);
     $('#ms-flip').onclick = () => {
       saveDraftInputs();
       const w = Math.floor(Math.random() * 2), d = Math.random() < 0.5 ? 'bat' : 'bowl';
@@ -541,10 +575,14 @@
     const t0 = Object.keys(draft.assign).filter((p) => draft.assign[p] === 0 || draft.assign[p] === 'j');
     const t1 = Object.keys(draft.assign).filter((p) => draft.assign[p] === 1 || draft.assign[p] === 'j');
     if (t0.length < 1 || t1.length < 1) return toast('Assign at least 1 player to each team', 'err');
+    const meta = draft.teamMeta || [{}, {}];
     const cfg = {
       sessionId: draft.sessionId, format: draft.format, venue: draft.venue,
       rules: Object.assign({}, draft.rules),
-      teams: [{ name: draft.teamNames[0], players: t0 }, { name: draft.teamNames[1], players: t1 }],
+      teams: [
+        { name: draft.teamNames[0], players: t0, teamId: (meta[0] || {}).teamId, logo: (meta[0] || {}).logo || '' },
+        { name: draft.teamNames[1], players: t1, teamId: (meta[1] || {}).teamId, logo: (meta[1] || {}).logo || '' },
+      ],
       toss: Object.assign({}, draft.toss),
     };
     const match = SC.newMatch(cfg);
@@ -616,7 +654,7 @@
   }
   function playerOptHTML(p, subOverride) {
     const sub = subOverride != null ? subOverride : (ROLE_LABEL[p.role] || '');
-    return `${avatar(p)}<div style="flex:1"><div>${esc(p.name)}</div><div class="small muted">${esc(sub)}</div></div>`;
+    return `${avatar(p)}<div style="flex:1"><div>${p.jersey ? `<span class="jersey">#${esc(p.jersey)}</span> ` : ''}${esc(p.name)}</div><div class="small muted">${esc(sub)}</div></div>`;
   }
 
   /* =========================================================
@@ -1289,7 +1327,12 @@
         <span class="badge ${match.status === 'live' ? 'live' : 'done'}">${match.status === 'live' ? 'LIVE' : 'Result'}</span></div>
       <div class="card">
         <div class="row spread">
-          <div><b>${esc(SC.teamName(match, 0))}</b> vs <b>${esc(SC.teamName(match, 1))}</b></div>
+          <div class="row" style="gap:8px">
+            ${teamLogoHTML({ logo: match.teams[0].logo, name: SC.teamName(match, 0) })}
+            <b>${esc(SC.teamName(match, 0))}</b> <span class="muted">vs</span>
+            ${teamLogoHTML({ logo: match.teams[1].logo, name: SC.teamName(match, 1) })}
+            <b>${esc(SC.teamName(match, 1))}</b>
+          </div>
           <span class="muted small">${fmtDate(match.date)}</span>
         </div>
         <div style="margin-top:6px" class="muted small">${match.format === 'box' ? '📦 Box cricket' : '🌳 Ground'} · ${match.rules.oversPerInnings} ov · ${match.rules.playersPerSide}-a-side ${match.rules.lastManStanding ? '· Last Man Standing' : ''}</div>
@@ -1562,7 +1605,7 @@
       <div class="small muted" style="margin:6px 0">Pick the teams taking part</div>
       <div class="plist" id="cp-teams" style="max-height:36vh;overflow:auto">
         ${teams.map((t) => `<div class="prow" data-t="${t.id}">
-          <div class="avatar">${esc(initialsOf(t.name))}</div>
+          ${teamLogoHTML(t)}
           <div class="meta"><div class="nm">${esc(t.name)}</div><div class="sub">${t.players.length} players</div></div>
           <span class="pill">+</span></div>`).join('')}
       </div>
@@ -1683,8 +1726,8 @@
       const match = SC.newMatch({
         format: t.rules.format || 'box', rules: Object.assign({}, t.rules),
         teams: [
-          { name: teamA.name, players: teamA.players.slice(), teamId: teamA.id },
-          { name: teamB.name, players: teamB.players.slice(), teamId: teamB.id },
+          { name: teamA.name, players: teamA.players.slice(), teamId: teamA.id, logo: teamA.logo || '' },
+          { name: teamB.name, players: teamB.players.slice(), teamId: teamB.id, logo: teamB.logo || '' },
         ],
         toss: { wonBy, decision },
       });
@@ -1763,8 +1806,8 @@
     if (!last) { draft = null; go('newmatch'); setTimeout(() => { if (draft) draft.sessionId = se.id; }, 0); return; }
     const A = last.teams[0], B = last.teams[1];
     tossThenStart(
-      { name: A.name, players: A.players.slice(), teamId: A.teamId },
-      { name: B.name, players: B.players.slice(), teamId: B.teamId },
+      { name: A.name, players: A.players.slice(), teamId: A.teamId, logo: A.logo || '' },
+      { name: B.name, players: B.players.slice(), teamId: B.teamId, logo: B.logo || '' },
       last.rules, last.format, se.id);
   }
 
