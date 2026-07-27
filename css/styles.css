@@ -101,6 +101,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--green)}
 .pill.on{background:var(--green-d);color:#bdf5dd;border-color:#1c5b43}
 .pill.red{background:#3a1717;color:#ffb4b4;border-color:#5a2424}
 .pill.on.b{background:#10263a;color:#7cc4ff;border-color:#1d5378}
+.pill.seg.j.on{background:#33260e;color:var(--accent);border-color:#6a4f15}
 .team-counts{display:flex;gap:8px}
 .team-counts .pill{font-weight:700}
 

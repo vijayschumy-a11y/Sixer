@@ -236,9 +236,10 @@
       inn.bowler = null; // UI must pick next bowler
     }
 
-    // innings end checks
-    const overLimitBalls = R.oversPerInnings * 6;
-    if (inn.wickets >= maxWickets(match)) closeInnings(match, 'All out');
+    // innings end checks (super-over innings carry their own limits)
+    const overLimitBalls = inn.oversLimit || (R.oversPerInnings * 6);
+    const wktLimit = inn.wktLimit || maxWickets(match);
+    if (inn.wickets >= wktLimit) closeInnings(match, 'All out');
     else if (inn.legalBalls >= overLimitBalls) closeInnings(match, 'Overs completed');
     else if (inn.target != null && inn.runs >= inn.target) closeInnings(match, 'Target chased');
 
@@ -299,13 +300,44 @@
   function closeInnings(match, reason) {
     const inn = cur(match);
     inn.closed = true; inn.closeReason = reason;
-    if (match.currentInnings === 1) { match.status = 'complete'; match.result = computeResult(match); }
+    const soCount = match.innings.filter((i) => i.superOver).length;
+    const isFinal = (match.currentInnings === 1 && soCount === 0) || (inn.superOver && soCount >= 2);
+    if (isFinal) { match.status = 'complete'; match.result = computeResult(match); }
+  }
+
+  /* Start a Super Over innings (1 over, 2 wickets). */
+  function startSuperOver(match, { battingTeam, order, striker, nonStriker, bowler, target }) {
+    const bowlingTeam = battingTeam === 0 ? 1 : 0;
+    const inn = emptyInnings(battingTeam, bowlingTeam);
+    inn.superOver = true; inn.oversLimit = 6; inn.wktLimit = 2;
+    inn.battingOrder = order.slice();
+    if (target != null) inn.target = target;
+    inn.striker = striker;
+    inn.nonStriker = match.rules.singleBatsman ? null : nonStriker;
+    inn.bowler = bowler;
+    ensureBat(inn, striker, 0);
+    if (inn.nonStriker) ensureBat(inn, nonStriker, 1);
+    ensureBowl(inn, bowler);
+    openPartnership(inn);
+    match.innings.push(inn);
+    match.currentInnings = match.innings.length - 1;
+    match.status = 'live';
+    return inn;
   }
   function endInningsManually(match, reason) { snapshot(match); closeInnings(match, reason || 'Declared'); }
 
   function computeResult(match) {
     const a = match.innings[0], b = match.innings[1];
     if (!a || !b) return '';
+    // Super Over decides a tie
+    const so = match.innings.filter((i) => i.superOver);
+    if (so.length >= 2) {
+      const s0 = so[0], s1 = so[1];
+      const t0 = teamName(match, s0.battingTeam), t1 = teamName(match, s1.battingTeam);
+      if (s1.runs > s0.runs) return `${t1} won the Super Over`;
+      if (s0.runs > s1.runs) return `${t0} won the Super Over`;
+      return 'Super Over tied';
+    }
     const tA = teamName(match, a.battingTeam), tB = teamName(match, b.battingTeam);
     if (b.runs >= (a.runs + 1)) {
       const wktsLeft = maxWickets(match) - b.wickets;
@@ -349,7 +381,7 @@
   }
 
   APP.scoring = {
-    newMatch, startInnings, recordBall, setNewBatsman, setNewBowler, manualSwap, setStriker, substituteBatter, retireBatter,
+    newMatch, startInnings, startSuperOver, recordBall, setNewBatsman, setNewBowler, manualSwap, setStriker, substituteBatter, retireBatter,
     endInningsManually, computeResult, cur, maxWickets, undo, canUndo,
     oversText, rr, reqRR, teamName, dismissalText, battingTeamFirst,
   };

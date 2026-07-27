@@ -468,23 +468,28 @@
       $('#ms-toss').value = String(w); $('#ms-dec').value = d;
       toast(`🪙 ${draft.teamNames[w]} won the toss — chose to ${d}`);
     };
-    $$('#ms-pool [data-assign]').forEach((el) => el.onclick = () => {
-      const pid = el.dataset.assign;
-      const cur = draft.assign[pid];
-      draft.assign[pid] = cur === undefined ? 0 : (cur === 0 ? 1 : undefined);
+    const segVal = (seg) => (seg === 'j' ? 'j' : parseInt(seg, 10));
+    $$('#ms-pool [data-seg]').forEach((pill) => pill.onclick = (e) => {
+      e.stopPropagation();
+      const row = pill.closest('[data-assign]'); const pid = row.dataset.assign;
+      const val = segVal(pill.dataset.seg);
+      draft.assign[pid] = (draft.assign[pid] === val) ? undefined : val;
       if (draft.assign[pid] === undefined) delete draft.assign[pid];
       const now = draft.assign[pid];
-      el.querySelectorAll('[data-seg]').forEach((s) => s.classList.toggle('on', parseInt(s.dataset.seg, 10) === now));
+      row.querySelectorAll('[data-seg]').forEach((s) => s.classList.toggle('on', segVal(s.dataset.seg) === now));
       refreshTeamCounts();
     });
     function refreshTeamCounts() {
-      const a = Object.values(draft.assign).filter((v) => v === 0).length;
-      const b = Object.values(draft.assign).filter((v) => v === 1).length;
+      const vals = Object.values(draft.assign);
+      const a = vals.filter((v) => v === 0 || v === 'j').length;
+      const b = vals.filter((v) => v === 1 || v === 'j').length;
+      const j = vals.filter((v) => v === 'j').length;
       const n0 = ($('#ms-t0').value.trim() || 'Team A');
       const n1 = ($('#ms-t1').value.trim() || 'Team B');
       const el = $('#ms-counts');
-      if (el) el.innerHTML = `<span class="pill on">${esc(n0)}: ${a} player${a !== 1 ? 's' : ''}</span>`
-        + `<span class="pill on b">${esc(n1)}: ${b} player${b !== 1 ? 's' : ''}</span>`;
+      if (el) el.innerHTML = `<span class="pill on">${esc(n0)}: ${a}</span>`
+        + `<span class="pill on b">${esc(n1)}: ${b}</span>`
+        + (j ? `<span class="pill on" style="background:#33260e;border-color:#6a4f15;color:var(--accent)">🃏 ${j} joker${j !== 1 ? 's' : ''}</span>` : '');
     }
     $('#ms-t0').oninput = refreshTeamCounts;
     $('#ms-t1').oninput = refreshTeamCounts;
@@ -516,11 +521,11 @@
 
   function assignRow(p) {
     const a = draft.assign[p.id];
-    const seg = (idx, lbl) => `<span class="pill seg ${idx === 1 ? 'b' : ''} ${a === idx ? 'on' : ''}" data-seg="${idx}" style="min-width:40px;justify-content:center">${esc(lbl)}</span>`;
+    const seg = (val, lbl, extra) => `<span class="pill seg ${extra || ''} ${a === val ? 'on' : ''}" data-seg="${val}" style="min-width:38px;justify-content:center">${esc(lbl)}</span>`;
     return `<div class="prow" data-assign="${p.id}">
       ${avatar(p)}
       <div class="meta"><div class="nm">${esc(p.name)}</div><div class="sub">${ROLE_LABEL[p.role] || ''}</div></div>
-      <div class="row" style="gap:6px">${seg(0, (draft.teamNames[0] || 'A').slice(0, 6))}${seg(1, (draft.teamNames[1] || 'B').slice(0, 6))}</div>
+      <div class="row" style="gap:5px">${seg(0, (draft.teamNames[0] || 'A').slice(0, 5))}${seg(1, (draft.teamNames[1] || 'B').slice(0, 5), 'b')}${seg('j', '🃏', 'j')}</div>
     </div>`;
   }
 
@@ -532,8 +537,9 @@
   }
 
   function startMatch() {
-    const t0 = Object.keys(draft.assign).filter((p) => draft.assign[p] === 0);
-    const t1 = Object.keys(draft.assign).filter((p) => draft.assign[p] === 1);
+    // jokers ('j') play for both teams
+    const t0 = Object.keys(draft.assign).filter((p) => draft.assign[p] === 0 || draft.assign[p] === 'j');
+    const t1 = Object.keys(draft.assign).filter((p) => draft.assign[p] === 1 || draft.assign[p] === 'j');
     if (t0.length < 1 || t1.length < 1) return toast('Assign at least 1 player to each team', 'err');
     const cfg = {
       sessionId: draft.sessionId, format: draft.format, venue: draft.venue,
@@ -708,7 +714,7 @@
       <div class="scoreboard">
         <div class="row spread teams">
           <span>${esc(SC.teamName(match, inn.battingTeam))} batting</span>
-          <span>${match.currentInnings === 0 ? '1st innings' : '2nd innings'}</span>
+          <span>${inn.superOver ? '⚡ Super Over' : (match.currentInnings === 0 ? '1st innings' : '2nd innings')}</span>
         </div>
         <div class="bigscore">${inn.runs}/${inn.wickets} <small>(${SC.oversText(inn.legalBalls)}/${r.oversPerInnings})</small></div>
         <div class="sb-line"><span>CRR ${SC.rr(inn.runs, inn.legalBalls)}</span>
@@ -797,16 +803,48 @@
     function inningsEnd() {
       const finished = match.status === 'complete';
       if (finished) {
+        if (/tied/i.test(match.result)) { // Match tied / Super Over tied → offer (another) Super Over
+          const s = sheet('Scores level! 🔥', `<p class="center" style="font-size:16px"><b>${esc(match.result)}</b></p>
+            <button class="btn primary block" id="ie-so">⚡ Play a Super Over</button>
+            <button class="btn ghost block" id="ie-tied" style="margin-top:8px">Leave it tied</button>`);
+          $('#ie-so', s.overlay).onclick = () => { s.close(); superOverFlow(); };
+          $('#ie-tied', s.overlay).onclick = () => { s.close(); go('scorecard', { id: match.id }); };
+          return;
+        }
         const s = sheet('Match complete 🏆', `<p class="center" style="font-size:18px"><b>${esc(match.result)}</b></p>
           <button class="btn primary block" id="ie-card">View scorecard</button>`);
         $('#ie-card', s.overlay).onclick = () => { s.close(); go('scorecard', { id: match.id }); };
-      } else {
-        const first = match.innings[0];
-        const s = sheet('Innings break', `<p class="center">${esc(SC.teamName(match, first.battingTeam))} scored <b>${first.runs}/${first.wickets}</b>.<br>
-          Target: <b>${first.runs + 1}</b></p>
-          <button class="btn primary block" id="ie-2nd">Start 2nd innings ▸</button>`);
-        $('#ie-2nd', s.overlay).onclick = () => { s.close(); openInningsFlow(match); };
+        return;
       }
+      const lastInn = match.innings[match.currentInnings];
+      if (lastInn && lastInn.superOver) { // Super Over 1 done → play the reply
+        const s = sheet('Super Over — reply', `<p class="center">${esc(SC.teamName(match, lastInn.battingTeam))} scored <b>${lastInn.runs}/${lastInn.wickets}</b>.<br>Target: <b>${lastInn.runs + 1}</b></p>
+          <button class="btn primary block" id="ie-so2">Start reply ▸</button>`);
+        $('#ie-so2', s.overlay).onclick = () => { s.close(); superOverFlow(lastInn.runs + 1); };
+        return;
+      }
+      const first = match.innings[0];
+      const s = sheet('Innings break', `<p class="center">${esc(SC.teamName(match, first.battingTeam))} scored <b>${first.runs}/${first.wickets}</b>.<br>
+        Target: <b>${first.runs + 1}</b></p>
+        <button class="btn primary block" id="ie-2nd">Start 2nd innings ▸</button>`);
+      $('#ie-2nd', s.overlay).onclick = () => { s.close(); openInningsFlow(match); };
+    }
+
+    function superOverFlow(target) {
+      const soDone = match.innings.filter((i) => i.superOver).length;
+      const battingTeam = (soDone === 0) ? match.innings[1].battingTeam : (match.innings[match.innings.length - 1].battingTeam === 0 ? 1 : 0);
+      const bowlingTeam = battingTeam === 0 ? 1 : 0;
+      const batPlayers = match.teams[battingTeam].players.map(pl);
+      const bowlPlayers = match.teams[bowlingTeam].players.map(pl);
+      const single = match.rules.singleBatsman;
+      const finish = (sid, nid) => pickPlayer('Super Over — bowler 🎯', bowlPlayers, (bid) => {
+        SC.startSuperOver(match, { battingTeam, order: match.teams[battingTeam].players.slice(), striker: sid, nonStriker: nid, bowler: bid, target });
+        S.Matches.save(match); go('live', { id: match.id });
+      });
+      pickPlayer('Super Over — striker 🏏', batPlayers, (sid) => {
+        if (single) finish(sid, null);
+        else pickPlayer('Super Over — non-striker', batPlayers.filter((p) => p.id !== sid), (nid) => finish(sid, nid));
+      });
     }
 
     function extraFlow(type) {
@@ -1298,7 +1336,7 @@
     const extras = inn.extras;
     const exTotal = extras.wide + extras.noball + extras.bye + extras.legbye;
     return `<div class="card">
-      <div class="row spread"><h4 style="color:var(--green)">${esc(SC.teamName(match, inn.battingTeam))}</h4>
+      <div class="row spread"><h4 style="color:var(--green)">${esc(SC.teamName(match, inn.battingTeam))}${inn.superOver ? ' <span class="badge">⚡ Super Over</span>' : ''}</h4>
         <b>${inn.runs}/${inn.wickets} <span class="muted small">(${SC.oversText(inn.legalBalls)} ov)</span></b></div>
       <table class="sc-table" style="margin-top:8px">
         <tr><th>Batter</th><th></th><th>R</th><th>B</th><th>4s</th><th>6s</th><th>SR</th></tr>
