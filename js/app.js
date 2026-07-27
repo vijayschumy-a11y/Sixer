@@ -713,6 +713,14 @@
         }
       }
     }
+    // live match NRR for the batting team (needs both sides' data — i.e. 2nd innings)
+    let nrrStr = null;
+    if (inn.target && !inn.superOver && match.innings[0]) {
+      const i0 = match.innings[0];
+      const effOv = (x) => { const allOut = x.wickets >= SC.maxWickets(match); const balls = allOut ? r.oversPerInnings * 6 : x.legalBalls; return (balls || 1) / 6; };
+      const nrr = inn.runs / effOv(inn) - i0.runs / effOv(i0);
+      nrrStr = (nrr >= 0 ? '+' : '') + nrr.toFixed(2);
+    }
 
     const liveBanner = shared
       ? `<div class="live-banner ${amScorer ? 'me' : ''}">
@@ -769,7 +777,8 @@
           ${inn.lastMan ? `<span class="pill red">LAST MAN</span>` : ''}
         </div>
         ${inn.target ? `<div class="target-banner">Target <b>${inn.target}</b> · need <b>${Math.max(0, inn.target - inn.runs)}</b> off <b>${ballsLeft}</b> · RRR ${SC.reqRR(inn.target, inn.runs, ballsLeft)}</div>` : ''}
-        ${winPct != null ? `<div class="sb-line" style="margin-top:6px"><span>Win chance (est)</span><span><b>${winPct}%</b> ${esc(SC.teamName(match, inn.battingTeam))}</span></div>` : ''}
+        ${nrrStr != null ? `<div class="sb-line" style="margin-top:6px"><span>Match NRR</span><span><b>${nrrStr}</b> ${esc(SC.teamName(match, inn.battingTeam))}</span></div>` : ''}
+        ${winPct != null ? `<div class="sb-line" style="margin-top:4px"><span>Win chance (est)</span><span><b>${winPct}%</b> ${esc(SC.teamName(match, inn.battingTeam))}</span></div>` : ''}
       </div>
 
       <div class="card" style="margin-top:12px">
