@@ -194,5 +194,52 @@
     };
   }
 
-  APP.stats = { career, fmt, leaderboard, blankCareer, playerOfMatch, standings, awards, overallImpact };
+  /* ---------- Milestones, form, head-to-head ---------- */
+  function hattricks(pid, matches) {
+    let count = 0;
+    (matches || APP.store.Matches.all()).forEach((m) => (m.innings || []).forEach((inn) => {
+      let streak = 0;
+      inn.timeline.forEach((ev) => {
+        if (ev.bowler !== pid || !ev.legal) return; // only this bowler's legal deliveries
+        const w = ev.wicket, credited = w && !['runout', 'retired'].includes(w.type);
+        if (credited) { streak++; if (streak === 3) count++; } else streak = 0;
+      });
+    }));
+    return count;
+  }
+
+  function milestones(pid, matches) {
+    const c = career(pid, matches);
+    return { thirties: c.thirties, fifties: c.fifties, hundreds: c.hundreds, fivers: c.fifers, ducks: c.ducks, hattricks: hattricks(pid, matches), fours: c.fours, sixes: c.sixes };
+  }
+
+  // recent innings (newest first): {runs, notOut, balls, wkts, date}
+  function form(pid, matches, n) {
+    const ms = (matches || APP.store.Matches.all()).slice().sort((a, b) => b.date - a.date);
+    const out = [];
+    ms.forEach((m) => {
+      let bat = null, wkts = 0;
+      m.innings.forEach((inn) => { if (inn.batStats[pid]) bat = inn.batStats[pid]; const wb = inn.bowlStats[pid]; if (wb) wkts += wb.wickets; });
+      if (bat || wkts) out.push({ runs: bat ? bat.runs : null, notOut: bat ? !bat.out : false, balls: bat ? bat.balls : 0, wkts, date: m.date });
+    });
+    return out.slice(0, n || 5);
+  }
+
+  // team vs team record across completed matches (by team name, either order)
+  function headToHead(nameA, nameB, matches) {
+    const res = { a: nameA, b: nameB, aWins: 0, bWins: 0, ties: 0, played: 0 };
+    (matches || APP.store.Matches.all()).filter((m) => m.status === 'complete' && m.innings.length === 2).forEach((m) => {
+      const n0 = APP.scoring.teamName(m, 0), n1 = APP.scoring.teamName(m, 1);
+      const set = [n0, n1];
+      if (!(set.includes(nameA) && set.includes(nameB) && nameA !== nameB)) return;
+      res.played++;
+      const i0 = m.innings[0], i1 = m.innings[1];
+      if (i0.runs === i1.runs) { res.ties++; return; }
+      const winName = (i1.runs > i0.runs) ? APP.scoring.teamName(m, i1.battingTeam) : APP.scoring.teamName(m, i0.battingTeam);
+      if (winName === nameA) res.aWins++; else if (winName === nameB) res.bWins++;
+    });
+    return res;
+  }
+
+  APP.stats = { career, fmt, leaderboard, blankCareer, playerOfMatch, standings, awards, overallImpact, milestones, form, headToHead };
 })();

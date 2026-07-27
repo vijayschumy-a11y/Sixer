@@ -300,11 +300,17 @@
     }, 'Delete', true);
   }
 
+  function badge(emoji, n, label) {
+    return `<div class="badge-tile ${n ? '' : 'off'}"><div class="bt-emoji">${emoji}</div><div class="bt-n">${n}</div><div class="bt-l">${esc(label)}</div></div>`;
+  }
+
   function playerProfile(screen, params, actions) {
     const p = S.Players.get(params.id);
     if (!p) return go('players');
     const c = ST.career(p.id);
     const f = ST.fmt(c);
+    const ms = ST.milestones(p.id);
+    const recent = ST.form(p.id, null, 5);
     actions.innerHTML = `<button class="btn sm" id="pp-edit">Edit</button>`;
     screen.innerHTML = `
       <div class="card center">
@@ -341,6 +347,25 @@
           ${statTile(c.catches, 'Catches')}${statTile(c.runouts, 'Run outs')}${statTile(c.stumpings, 'Stumpings')}
         </div>
       </div>
+
+      <div class="card">
+        <h4 style="color:var(--green)">Milestones 🏅</h4>
+        <div class="badges" style="margin-top:8px">
+          ${badge('💯', ms.hundreds, '100s')}${badge('🏏', ms.fifties, '50s')}${badge('✨', ms.thirties, '30s')}
+          ${badge('🎯', ms.fivers, '5-fers')}${badge('🎩', ms.hattricks, 'hat-tricks')}${badge('🦆', ms.ducks, 'ducks')}
+          ${badge('4️⃣', ms.fours, 'fours')}${badge('6️⃣', ms.sixes, 'sixes')}
+        </div>
+      </div>
+
+      ${recent.length ? `<div class="card">
+        <h4 style="color:var(--green)">Recent form</h4>
+        <div class="form-row" style="margin-top:8px">
+          ${recent.map((r) => `<div class="form-chip">
+            <div class="fc-runs">${r.runs != null ? r.runs + (r.notOut ? '*' : '') : '–'}</div>
+            <div class="fc-sub">${r.wkts ? r.wkts + 'w' : (r.balls ? r.balls + 'b' : '')}</div>
+          </div>`).join('')}
+        </div>
+      </div>` : ''}
     `;
     $('#pp-edit').onclick = () => editPlayer(p.id);
   }
@@ -1232,6 +1257,7 @@
         <div style="margin-top:6px" class="muted small">${match.format === 'box' ? '📦 Box cricket' : '🌳 Ground'} · ${match.rules.oversPerInnings} ov · ${match.rules.playersPerSide}-a-side ${match.rules.lastManStanding ? '· Last Man Standing' : ''}</div>
         <div style="margin-top:8px;font-size:16px"><b>${esc(match.result || 'In progress')}</b></div>
         <div class="muted small">Toss: ${esc(SC.teamName(match, match.toss.wonBy))} elected to ${match.toss.decision}</div>
+        ${(() => { const h = ST.headToHead(SC.teamName(match, 0), SC.teamName(match, 1)); return h.played > 1 ? `<div class="muted small" style="margin-top:4px">Head-to-head: ${esc(h.a)} <b>${h.aWins}</b> – <b>${h.bWins}</b> ${esc(h.b)}${h.ties ? ' · ' + h.ties + ' tie' + (h.ties > 1 ? 's' : '') : ''}</div>` : ''; })()}
       </div>
 
       ${potm ? `<div class="card" style="border-color:#6a4f15;background:linear-gradient(180deg,#241b06,#1a1405)">
