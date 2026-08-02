@@ -38,11 +38,21 @@
       if (!raw) return blank();
       const parsed = JSON.parse(raw);
       const base = blank();
-      return Object.assign(base, parsed, {
+      const merged = Object.assign(base, parsed, {
         settings: Object.assign(base.settings, parsed.settings || {}, {
           defaults: Object.assign(base.settings.defaults, (parsed.settings || {}).defaults || {}),
         }),
       });
+      // migrate older matches that predate newer innings fields (avoids render crashes on resume)
+      (merged.matches || []).forEach((m) => (m.innings || []).forEach((inn) => {
+        if (!Array.isArray(inn.partnerships)) inn.partnerships = [];
+        if (!inn.extras) inn.extras = { wide: 0, noball: 0, bye: 0, legbye: 0 };
+        if (typeof inn.curOverBowlerBalls !== 'number') inn.curOverBowlerBalls = inn.legalBalls ? inn.legalBalls % 6 : 0;
+        if (typeof inn.curOverBowlerRuns !== 'number') inn.curOverBowlerRuns = 0;
+        if (!Array.isArray(inn.fow)) inn.fow = [];
+        if (!Array.isArray(inn.timeline)) inn.timeline = [];
+      }));
+      return merged;
     } catch (e) {
       console.warn('DB load failed, starting fresh', e);
       return blank();

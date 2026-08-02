@@ -37,9 +37,10 @@
   }
 
   function openPartnership(inn) {
+    if (!inn.partnerships) inn.partnerships = [];
     if (inn.striker && inn.nonStriker) inn.partnerships.push({ a: inn.striker, b: inn.nonStriker, runs: 0, balls: 0, out: false });
   }
-  function curPartnership(inn) { return inn.partnerships[inn.partnerships.length - 1]; }
+  function curPartnership(inn) { return inn.partnerships ? inn.partnerships[inn.partnerships.length - 1] : undefined; }
 
   function ensureBat(inn, pid, order) {
     if (!inn.batStats[pid]) inn.batStats[pid] = { runs: 0, balls: 0, fours: 0, sixes: 0, out: false, how: '', bowler: '', fielder: '', order: order != null ? order : Object.keys(inn.batStats).length };

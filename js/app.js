@@ -787,7 +787,7 @@
           ${batRow(striker, bs, true)}
           ${nonStriker ? batRow(nonStriker, ns, false) : ''}
         </table>
-        ${(() => { const cp = inn.partnerships[inn.partnerships.length - 1]; return (cp && !cp.out && nonStriker) ? `<div class="small muted" style="margin-top:6px">Partnership: <b>${cp.runs}</b> (${cp.balls})</div>` : ''; })()}
+        ${(() => { const ps = inn.partnerships || []; const cp = ps[ps.length - 1]; return (cp && !cp.out && nonStriker) ? `<div class="small muted" style="margin-top:6px">Partnership: <b>${cp.runs}</b> (${cp.balls})</div>` : ''; })()}
         <div class="divider" style="margin:10px 0"></div>
         <table class="mini-table">
           <tr><th>Bowler</th><th>O</th><th>M</th><th>R</th><th>W</th><th>Econ</th></tr>
