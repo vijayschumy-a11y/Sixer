@@ -1,5 +1,5 @@
 /* Sixer service worker — offline-first cache. */
-const CACHE = 'sixer-v35';
+const CACHE = 'sixer-v36';
 const ASSETS = [
   './', './index.html',
   './css/styles.css',

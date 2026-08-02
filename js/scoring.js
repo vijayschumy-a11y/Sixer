@@ -399,6 +399,16 @@
       if (!inn.extras) inn.extras = { wide: 0, noball: 0, bye: 0, legbye: 0 };
       if (typeof inn.curOverBowlerBalls !== 'number') inn.curOverBowlerBalls = inn.legalBalls ? inn.legalBalls % 6 : 0;
       if (typeof inn.curOverBowlerRuns !== 'number') inn.curOverBowlerRuns = 0;
+      // Firebase strips null, so a bowler can vanish in transit. Mid-over (balls
+      // already bowled this over) that's impossible in a healthy innings — recover
+      // the real bowler from the last ball so a takeover/resume doesn't wrongly
+      // ask for a new one. At a true over boundary curOverBowlerBalls is 0, so we
+      // leave bowler null there and the "pick next over's bowler" prompt still fires.
+      if (!inn.bowler && inn.curOverBowlerBalls > 0 && inn.timeline.length) {
+        for (let i = inn.timeline.length - 1; i >= 0; i--) {
+          if (inn.timeline[i] && inn.timeline[i].bowler) { inn.bowler = inn.timeline[i].bowler; break; }
+        }
+      }
     });
     return match;
   }
