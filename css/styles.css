@@ -125,6 +125,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--green)}
   border:1px solid var(--line);flex:none;display:flex;align-items:center;justify-content:center;font-weight:700;color:var(--muted)}
 .avatar.lg{width:72px;height:72px;font-size:24px}
 .avatar.xl{width:96px;height:96px;font-size:30px}
+.avatar.xs{width:22px;height:22px;font-size:9px;border-radius:6px}
 
 /* Player list */
 .plist{display:flex;flex-direction:column;gap:8px}
@@ -294,8 +295,23 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--green)}
 .list-link{display:flex;align-items:center;justify-content:space-between;padding:14px;border:1px solid var(--line-soft);border-radius:15px;background:linear-gradient(165deg,var(--card2),var(--card));margin-bottom:9px;transition:border-color .15s,transform .07s}
 .list-link:active{border-color:var(--green);transform:scale(.99)}
 .badge{font-size:10px;font-weight:700;letter-spacing:.03em;padding:3px 9px;border-radius:999px;background:var(--card2);border:1px solid var(--line);color:var(--muted)}
-.badge.live{background:#3a1414;color:#ff8a8a;border-color:#5a2020}
+.badge.live{background:rgba(37,207,136,.14);color:#7fe9b6;border-color:#1f6349;display:inline-flex;align-items:center;gap:5px}
+.badge.live .dot{width:7px;height:7px;border-radius:50%;background:#37e39a;box-shadow:0 0 8px #37e39a;animation:pulse 1.4s infinite}
 .badge.done{background:#16321f;color:#9be8bd;border-color:#1e5234}
+
+/* live-now home card — emerald accent */
+.live-card{border-color:#1f6349 !important;box-shadow:0 12px 36px -10px rgba(0,0,0,.6), 0 0 0 1px rgba(37,207,136,.15), 0 8px 26px -10px rgba(37,207,136,.35)}
+
+/* recent-results winner accent */
+.win{color:var(--accent)}
+.win::after{content:" 🏆";font-size:.85em}
+.result-link.has-winner{border-left:3px solid rgba(241,192,76,.55)}
+
+/* scoreboard sparkline */
+.sb-spark{position:absolute;left:0;right:0;bottom:0;height:46px;opacity:.32;pointer-events:none;z-index:0}
+.scoreboard > *:not(.sb-spark){position:relative;z-index:1}
+.spark-line{stroke-dasharray:640;stroke-dashoffset:640;animation:sparkdraw .9s ease forwards}
+@keyframes sparkdraw{to{stroke-dashoffset:0}}
 .camera-wrap{position:relative;border-radius:14px;overflow:hidden;background:#000;aspect-ratio:1/1}
 .camera-wrap video,.camera-wrap canvas{width:100%;height:100%;object-fit:cover;display:block}
 .hidden{display:none !important}

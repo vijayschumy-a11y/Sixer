@@ -46,8 +46,8 @@
     screen.innerHTML = `
       <div class="screen-title"><h2>Welcome 🏏</h2></div>
 
-      ${live.length ? `<div class="card" style="border-color:#5a2020">
-        <div class="row spread"><b>Live now</b><span class="badge live">● LIVE</span></div>
+      ${live.length ? `<div class="card live-card">
+        <div class="row spread"><b>Live now</b><span class="badge live"><span class="dot"></span>LIVE</span></div>
         ${live.map((m) => liveCardHTML(m)).join('')}
       </div>` : ''}
 
@@ -143,13 +143,20 @@
   }
 
   function matchListItem(m) {
-    const a = m.innings[0], b = m.innings[1];
-    const sa = a ? `${a.runs}/${a.wickets}` : '—';
-    const sb = b ? `${b.runs}/${b.wickets}` : '';
-    return `<div class="list-link" data-match="${m.id}">
-      <div style="min-width:0">
-        <div><b>${esc(SC.teamName(m, 0))}</b> vs <b>${esc(SC.teamName(m, 1))}</b></div>
-        <div class="small muted">${esc(m.result || 'In progress')} · ${fmtDateTime(m.date)}${m.venue ? ' · 📍 ' + esc(m.venue) : ''}</div>
+    let winIdx = -1;
+    if (m.status === 'complete' && m.innings.length === 2) {
+      const i0 = m.innings[0], i1 = m.innings[1];
+      if (i1.runs > i0.runs) winIdx = i1.battingTeam; else if (i0.runs > i1.runs) winIdx = i0.battingTeam;
+    }
+    const nm = (i) => `<b class="${winIdx === i ? 'win' : ''}">${esc(SC.teamName(m, i))}</b>`;
+    return `<div class="list-link result-link ${winIdx >= 0 ? 'has-winner' : ''}" data-match="${m.id}">
+      <div style="min-width:0;flex:1">
+        <div class="row" style="gap:7px;flex-wrap:wrap">
+          ${teamLogoHTML({ logo: (m.teams[0] || {}).logo, name: SC.teamName(m, 0) }, 'xs')} ${nm(0)}
+          <span class="muted small">v</span>
+          ${teamLogoHTML({ logo: (m.teams[1] || {}).logo, name: SC.teamName(m, 1) }, 'xs')} ${nm(1)}
+        </div>
+        <div class="small muted" style="margin-top:4px">${esc(m.result || 'In progress')} · ${fmtDateTime(m.date)}${m.venue ? ' · 📍 ' + esc(m.venue) : ''}</div>
       </div>
       <span class="badge ${m.status === 'live' ? 'live' : 'done'}">${m.status === 'live' ? 'LIVE' : 'Result'}</span>
     </div>`;
@@ -767,6 +774,7 @@
     screen.innerHTML = `
       ${liveBanner}
       <div class="scoreboard">
+        <div class="sb-spark">${APP.charts.sparklineSVG(inn)}</div>
         <div class="row spread teams">
           <span>${esc(SC.teamName(match, inn.battingTeam))} batting</span>
           <span>${inn.superOver ? '⚡ Super Over' : (match.currentInnings === 0 ? '1st innings' : '2nd innings')}</span>

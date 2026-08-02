@@ -202,5 +202,21 @@
     </svg>`;
   }
 
-  APP.charts = { perOver, wormSVG, manhattanSVG, runRateSVG, scorecardCardSVG };
+  // tiny cumulative-runs sparkline for the live scoreboard background
+  function sparklineSVG(inn) {
+    const W = 340, H = 46; let cum = 0, n = 0; const pts = [];
+    (inn.timeline || []).forEach((ev) => { cum += ev.teamRuns; if (ev.legal) { n++; pts.push([n, cum]); } });
+    if (pts.length < 2) return '';
+    const maxX = pts[pts.length - 1][0], maxY = Math.max(1, cum);
+    const xy = pts.map((p) => [p[0] / maxX * W, (H - 2) - p[1] / maxY * (H - 6)]);
+    const line = xy.map((p) => `${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(' ');
+    const area = `0,${H} ${line} ${W},${H}`;
+    return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" width="100%" height="100%" style="display:block">
+      <defs><linearGradient id="sparkg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#25cf88" stop-opacity=".55"/><stop offset="1" stop-color="#25cf88" stop-opacity="0"/></linearGradient></defs>
+      <polygon points="${area}" fill="url(#sparkg)"/>
+      <polyline points="${line}" fill="none" stroke="#37e39a" stroke-width="2" stroke-linejoin="round" class="spark-line"/>
+    </svg>`;
+  }
+
+  APP.charts = { perOver, wormSVG, manhattanSVG, runRateSVG, sparklineSVG, scorecardCardSVG };
 })();
