@@ -686,6 +686,9 @@
     const r = match.rules;
 
     const shared = !!match.roomCode;
+    // resuming a shared match after reopening the app: reconnect to its room so
+    // scorer status + live sync are restored (otherwise "I'm scoring now" has no room)
+    if (shared && SY.available() && SY.activeCode() !== match.roomCode && !match.remote) enterRoom(match.roomCode);
     const amScorer = !shared || SY.amScorer();
     const scorerName = shared && SY.currentScorer() ? SY.currentScorer().name : '';
     // save locally + push to viewers when I hold the pen
@@ -1174,6 +1177,12 @@
 
   function takeOver(match) {
     if (!SY.available()) return;
+    // not connected to the room yet (e.g. just resumed) — reconnect, then retry shortly
+    if (match.roomCode && SY.activeCode() !== match.roomCode) {
+      enterRoom(match.roomCode); toast('Reconnecting…');
+      setTimeout(() => takeOver(match), 900);
+      return;
+    }
     const scorer = SY.currentScorer();
     // If nobody is actively scoring (scorer's device gone), claim straight away — no one to approve.
     if (!scorer || !SY.isPresent(scorer.id)) {
@@ -1208,6 +1217,7 @@
       onMatch: (payload) => {
         APP.syncNames = payload.names || {};
         const m = payload.match; if (!m) return;
+        SC.hydrateMatch(m); // Firebase drops empty arrays — restore them before use
         // remember this room so it can be rejoined from Home with one tap
         if (m.status === 'live') {
           const title = (m.teams && m.teams.length) ? m.teams.map((t) => t.name).join(' vs ') : 'Live match';

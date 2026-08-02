@@ -381,9 +381,31 @@
     return t.wonBy === 0 ? 1 : 0;
   }
 
+  /* Restore innings fields that Firebase silently drops in transit.
+     RTDB does not store empty arrays/objects, so a match received over the wire
+     (viewer, or scorer resuming a not-yet-scored match) can arrive with
+     timeline/fow/partnerships/extras missing — the next ball would then crash.
+     Idempotent: safe to call on any match, local or remote. */
+  function hydrateMatch(match) {
+    if (!match || !Array.isArray(match.innings)) return match;
+    match.innings.forEach((inn) => {
+      if (!inn) return;
+      if (!Array.isArray(inn.timeline)) inn.timeline = [];
+      if (!Array.isArray(inn.fow)) inn.fow = [];
+      if (!Array.isArray(inn.partnerships)) inn.partnerships = [];
+      if (!Array.isArray(inn.battingOrder)) inn.battingOrder = [];
+      if (!inn.batStats) inn.batStats = {};
+      if (!inn.bowlStats) inn.bowlStats = {};
+      if (!inn.extras) inn.extras = { wide: 0, noball: 0, bye: 0, legbye: 0 };
+      if (typeof inn.curOverBowlerBalls !== 'number') inn.curOverBowlerBalls = inn.legalBalls ? inn.legalBalls % 6 : 0;
+      if (typeof inn.curOverBowlerRuns !== 'number') inn.curOverBowlerRuns = 0;
+    });
+    return match;
+  }
+
   APP.scoring = {
     newMatch, startInnings, startSuperOver, recordBall, setNewBatsman, setNewBowler, manualSwap, setStriker, substituteBatter, retireBatter,
-    endInningsManually, computeResult, cur, maxWickets, undo, canUndo,
+    endInningsManually, computeResult, cur, maxWickets, undo, canUndo, hydrateMatch,
     oversText, rr, reqRR, teamName, dismissalText, battingTeamFirst,
   };
 })();
